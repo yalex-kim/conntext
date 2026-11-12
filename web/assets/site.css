@@ -518,3 +518,21 @@ a.secno:hover { text-decoration: none; filter: brightness(0.96); }
 }
 .manual [id] { scroll-margin-top: 64px; }
 .steps .term + p { margin-top: var(--s-3); }
+
+/* 첫 방문 인트로: 화면을 덮었다가 워드마크가 놓이면 사라진다 */
+.intro {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center;
+  background: var(--ground);
+  cursor: pointer;
+  transition: opacity var(--dur-3) var(--ease-out), visibility 0s linear var(--dur-3);
+}
+.intro.is-leaving { opacity: 0; visibility: hidden; }
+.intro__stage { width: min(100vw, 177.78vh); height: auto; max-height: 100vh; display: block; }
+.intro__skip { position: absolute; top: var(--s-4); right: var(--s-4); }
+html.intro-open { overflow: hidden; }
+.foot__intro {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in oklab, currentColor 40%, transparent);
+}
+.foot__intro:hover { text-decoration-color: currentColor; }

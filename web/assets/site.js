@@ -96,3 +96,48 @@ if (toc) {
     })
   }
 }
+
+// 5. 소개 페이지 첫 방문 인트로: 워드마크의 conn 라벨이 nn만 품고 심볼이 된다.
+//    같은 세션에서는 한 번만, 움직임 줄이기 설정이면 재생하지 않는다. 클릭·Esc·건너뛰기로 바로 닫힌다.
+if (document.body.classList.contains("landing")) {
+  const SEEN = "conntext:intro-seen"
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches
+
+  async function showIntro() {
+    if (document.querySelector(".intro")) return
+    const { mountIntro, play } = await import("/assets/intro.js")
+    const box = document.createElement("div")
+    box.className = "intro"
+    box.innerHTML = `<svg class="intro__stage" preserveAspectRatio="xMidYMid meet" role="img" aria-label="conntext 인트로: 노란 conn 라벨이 nn만 품은 채 줄어들어 Conntext 심볼이 됩니다"></svg>
+      <button class="btn btn--quiet btn--sm intro__skip" type="button">건너뛰기</button>`
+    document.body.prepend(box)
+    document.documentElement.classList.add("intro-open")
+    const stage = box.querySelector("svg")
+    const intro = mountIntro(stage)
+    // 세로 화면: 16:9 장면에서 워드마크와 심볼이 지나가는 가운데 띠만 잘라 크게 보인다.
+    if (innerWidth < innerHeight) stage.setAttribute("viewBox", "380 290 1160 500")
+    intro.render(0)
+    let stop = () => {}
+    let closed = false
+    const close = () => {
+      if (closed) return
+      closed = true
+      stop()
+      box.classList.add("is-leaving")
+      document.documentElement.classList.remove("intro-open")
+      document.removeEventListener("keydown", onKey)
+      setTimeout(() => box.remove(), 500)
+      try { sessionStorage.setItem(SEEN, "1") } catch {}
+    }
+    const onKey = (e) => { if (e.key === "Escape") close() }
+    document.addEventListener("keydown", onKey)
+    box.addEventListener("click", close)
+    stop = play(intro.render, { rate: 1.25, until: intro.settled, onDone: () => setTimeout(close, 550) })
+  }
+
+  let seen = false
+  try { seen = sessionStorage.getItem(SEEN) === "1" } catch {}
+  if (!reduce && !seen && !location.hash) showIntro()
+  document.querySelector("[data-intro]")?.addEventListener("click", () => { if (!reduce) showIntro() })
+  if (reduce) document.querySelector("[data-intro]")?.setAttribute("hidden", "")
+}

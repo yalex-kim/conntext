@@ -8,6 +8,7 @@ const b = await chromium.launch();
 const p = await b.newPage({ viewport: { width: 1920, height: 1080 } });
 const errs = []; p.on('pageerror', e => errs.push(e.message));
 await p.goto('http://localhost:7373/intro.html?capture', { waitUntil: 'networkidle' });
+await p.waitForFunction(() => window.introReady === true);
 const dur = await p.evaluate(() => window.DURATION);
 const times = only ? only.split(',').map(Number) : Array.from({ length: Math.round(dur * fps) + 1 }, (_, i) => i / fps);
 for (const [i, t] of times.entries()) {
