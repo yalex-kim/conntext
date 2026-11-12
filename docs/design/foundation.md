@@ -46,7 +46,7 @@ home, wiki, memo, agent, session, team, settings, admin, search, plus, check, x,
 
 ## 브랜드와 사진
 - 워드마크: `/assets/brand/wordmark.svg`(밝은 바탕), `/assets/brand/wordmark-on-ink.svg`(잉크 바탕), `/assets/brand/wordmark-connpass.svg`(자매 서비스)
-- 심볼: `/assets/brand/mark.svg`. 계단형 이중 아치는 심볼에만 쓴다.
+- 심볼: `/assets/brand/mark.svg` (노치 있는 노란 라벨 태그 + `nn`). 파비콘은 `/assets/brand/favicon.svg`(16px용으로 굵게 한 판).
 - 사진: `/assets/img/cables-1376.webp`, `/assets/img/cables-800.webp`. 서버 랙의 남색 케이블 다발에 노란 라벨이 감긴 사진. 노란 라벨은 오른쪽 아래 3분의 1에 초점이 맞아 있다. `srcset`으로 쓴다.
 
 ## 지킬 것
