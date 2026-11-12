@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>심볼 후보 비교 · Conntext</title>
+<link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/base.css">
+<style>
+  .top { display: flex; align-items: center; height: 56px; padding: 0 var(--s-5); }
+  main { max-width: 1200px; margin: 0 auto; padding: var(--s-7) var(--s-5) var(--s-9); }
+  .intro { max-width: var(--measure); margin-bottom: var(--s-6); }
+  .intro h1 { margin-bottom: var(--s-3); }
+  .intro p { color: var(--ink-2); }
+  .over { display: grid; gap: var(--s-5); grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); margin-bottom: var(--s-8); }
+  .over .panel { padding: var(--s-5); }
+  .over h2 { font-family: var(--font-ui); font-size: var(--fs-4); font-weight: 700; margin-bottom: var(--s-4); letter-spacing: 0; }
+  .over .row figure { display: grid; grid-template-columns: auto auto auto; align-items: end; gap: 10px; }
+  .over .row figure figcaption { grid-column: 1 / -1; }
+  figure { margin: 0; }
+  figcaption { font-size: var(--fs-1); color: var(--ink-2); margin-top: 6px; line-height: var(--lh-ui); }
+  .on-ink figcaption { color: var(--on-ink-2); }
+  .row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s-4) var(--s-5); }
+  .px { image-rendering: pixelated; background: repeating-conic-gradient(var(--sunken) 0 25%, var(--surface) 0 50%) 0 0 / 12px 12px; border: 1px solid var(--line); }
+  .cand { padding-top: var(--s-7); margin-top: var(--s-7); border-top: 1px solid var(--line); scroll-margin-top: var(--s-4); }
+  .cand__head { max-width: var(--measure); margin-bottom: var(--s-5); }
+  .cand__head h2 { margin-bottom: var(--s-2); }
+  .cand__head p { color: var(--ink); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px var(--s-4); margin: var(--s-4) 0 0; font-size: var(--fs-3); line-height: 1.6; }
+  dt { font-weight: 700; }
+  dd { margin: 0; color: var(--ink-2); }
+  .cand__grid { display: grid; gap: var(--s-3); grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); }
+  .cell { border: 1px solid var(--line); border-radius: var(--r-3); padding: var(--s-4) var(--s-5) var(--s-5); background: var(--surface); min-width: 0; overflow: hidden; }
+  .cell.on-ink { background: var(--ink); border-color: var(--ink); }
+  .cell h3 { font-size: var(--fs-2); font-weight: 600; color: var(--ink-2); margin-bottom: var(--s-4); }
+  .cell.on-ink h3 { color: var(--on-ink-2); }
+  .cell .row img[width="200"] { width: 120px; height: 120px; }
+  .stack { display: grid; gap: var(--s-4); justify-items: start; }
+  .lock { display: inline-flex; align-items: center; gap: calc(var(--h) * 0.3); height: var(--h); }
+  .lock img { height: var(--h); width: auto; }
+  .tabs-mock { display: flex; gap: 2px; padding: 6px 6px 0; background: #dfe3e8; border-radius: var(--r-2) var(--r-2) 0 0; overflow: hidden; }
+  .tabs-mock + .tabs-mock { margin-top: var(--s-3); }
+  .tab { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; min-width: 0; max-width: 220px; font-size: 12px; color: #3c4350; border-radius: 8px 8px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tab img { flex: none; }
+  .tab.is-on { background: #fff; color: #1f2329; }
+  .tabs-mock--dark { background: #1f2124; }
+  .tabs-mock--dark .tab { color: #b8bcc2; }
+  .tabs-mock--dark .tab.is-on { background: #35363a; color: #e8eaed; }
+  .tabs-mock--all { flex-wrap: wrap; }
+  .tabs-mock--all .tab { flex: 1 1 140px; max-width: none; }
+  @media (max-width: 640px) {
+    main { padding: var(--s-6) var(--s-4) var(--s-8); }
+    .cell .row img[width="200"] { width: 96px; height: 96px; }
+  }
+</style>
+</head>
+<body>
+<header class="top on-ink"><img class="wordmark" src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></header>
+<main>
+  <div class="intro">
+    <h1>심볼 후보 비교</h1>
+    <p>지금 심볼과 후보 세 가지를 같은 조건으로 놓았습니다. 모두 64 격자, 둥근 끝, 색은 <code>--marker</code>와 <code>--ink</code>입니다. 아직 아무것도 교체하지 않았습니다. 고르시면 그때 파비콘과 앱 아이콘을 바꿉니다. 지금 심볼의 16·32px 자리에는 실제 파비콘(<code>favicon.svg</code>, 16px용으로 다듬은 판)을 놓았습니다.</p>
+  </div>
+
+  <div class="over">
+    <section class="panel" aria-labelledby="h-o1">
+      <h2 id="h-o1">한눈에: 64 · 32 · 16px</h2>
+      <div class="row"><figure><img src="/assets/brand/mark.svg" width="64" height="64" alt=""><img src="/assets/brand/favicon.svg" width="32" height="32" alt=""><img src="/assets/brand/favicon.svg" width="16" height="16" alt=""><figcaption>지금 심볼</figcaption></figure><figure><img src="/assets/brand/candidates/mark-a.svg" width="64" height="64" alt=""><img src="/assets/brand/candidates/mark-a.svg" width="32" height="32" alt=""><img src="/assets/brand/candidates/mark-a.svg" width="16" height="16" alt=""><figcaption>A. 라벨 태그</figcaption></figure><figure><img src="/assets/brand/candidates/mark-b.svg" width="64" height="64" alt=""><img src="/assets/brand/candidates/mark-b.svg" width="32" height="32" alt=""><img src="/assets/brand/candidates/mark-b.svg" width="16" height="16" alt=""><figcaption>B. 넘겨주기</figcaption></figure><figure><img src="/assets/brand/candidates/mark-c.svg" width="64" height="64" alt=""><img src="/assets/brand/candidates/mark-c.svg" width="32" height="32" alt=""><img src="/assets/brand/candidates/mark-c.svg" width="16" height="16" alt=""><figcaption>C. 케이블에 감긴 라벨</figcaption></figure></div>
+    </section>
+    <section class="panel" aria-labelledby="h-o2">
+      <h2 id="h-o2">16px에서 실제로 그려지는 픽셀 (6배 확대)</h2>
+      <div class="row"><figure><img class="px" src="/assets/brand/candidates/current-16.png" width="96" height="96" alt="지금 심볼 16px 확대"><figcaption>지금 심볼</figcaption></figure><figure><img class="px" src="/assets/brand/candidates/a-16.png" width="96" height="96" alt="A. 라벨 태그 16px 확대"><figcaption>A. 라벨 태그</figcaption></figure><figure><img class="px" src="/assets/brand/candidates/b-16.png" width="96" height="96" alt="B. 넘겨주기 16px 확대"><figcaption>B. 넘겨주기</figcaption></figure><figure><img class="px" src="/assets/brand/candidates/c-16.png" width="96" height="96" alt="C. 케이블에 감긴 라벨 16px 확대"><figcaption>C. 케이블에 감긴 라벨</figcaption></figure></div>
+    </section>
+    <section class="panel" aria-labelledby="h-o3" style="grid-column:1/-1">
+      <h2 id="h-o3">브라우저 탭에 나란히</h2>
+      <div class="tabs-mock tabs-mock--all"><span class="tab is-on"><img src="/assets/brand/favicon.svg" width="16" height="16" alt="">지금 심볼</span><span class="tab"><img src="/assets/brand/candidates/mark-a.svg" width="16" height="16" alt="">A. 라벨 태그</span><span class="tab"><img src="/assets/brand/candidates/mark-b.svg" width="16" height="16" alt="">B. 넘겨주기</span><span class="tab"><img src="/assets/brand/candidates/mark-c.svg" width="16" height="16" alt="">C. 케이블에 감긴 라벨</span></div>
+      <div class="tabs-mock tabs-mock--all tabs-mock--dark"><span class="tab is-on"><img src="/assets/brand/favicon.svg" width="16" height="16" alt="">지금 심볼</span><span class="tab"><img src="/assets/brand/candidates/mark-a.svg" width="16" height="16" alt="">A. 라벨 태그</span><span class="tab"><img src="/assets/brand/candidates/mark-b.svg" width="16" height="16" alt="">B. 넘겨주기</span><span class="tab"><img src="/assets/brand/candidates/mark-c.svg" width="16" height="16" alt="">C. 케이블에 감긴 라벨</span></div>
+    </section>
+  </div>
+
+  <article class="cand" id="current" aria-labelledby="h-current">
+  <header class="cand__head"><h2 id="h-current">지금 심볼</h2><p>계단형 이중 아치입니다. 첫 n의 오른쪽 다리가 한 단 아래 둘째 n의 왼쪽 기둥이 되어, 한 세션이 다음 세션으로 넘겨주는 모양을 뜻합니다.</p>
+  <dl><dt>강점</dt><dd>노란 사각과 잉크 선 하나로 단순하고, 64px 이상에서는 형태가 단단합니다.</dd><dt>약점</dt><dd>기둥을 공유해서 16~32px에서 소문자 m으로 읽힙니다. 워드마크 옆에 두면 "m conntext"처럼 보입니다.</dd></dl></header>
+  <div class="cand__grid">
+    <div class="cell"><h3>밝은 바탕</h3><div class="row"><figure><img src="/assets/brand/favicon.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure><figure><img src="/assets/brand/favicon.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure><figure><img src="/assets/brand/mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure><figure><img src="/assets/brand/mark.svg" width="200" height="200" alt=""><figcaption>200</figcaption></figure></div></div>
+    <div class="cell on-ink"><h3>잉크 바탕</h3><div class="row"><figure><img src="/assets/brand/favicon.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure><figure><img src="/assets/brand/favicon.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure><figure><img src="/assets/brand/mark.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure><figure><img src="/assets/brand/mark.svg" width="200" height="200" alt=""><figcaption>200</figcaption></figure></div></div>
+    <div class="cell"><h3>16px · 32px 확대</h3><div class="row"><figure><img class="px" src="/assets/brand/candidates/current-16.png" width="96" height="96" alt="16px 렌더를 6배 확대"><figcaption>16px 실제 픽셀 ×6</figcaption></figure><figure><img class="px" src="/assets/brand/candidates/current-32.png" width="96" height="96" alt="32px 렌더를 3배 확대"><figcaption>32px 실제 픽셀 ×3</figcaption></figure></div></div>
+    <div class="cell"><h3>워드마크 옆</h3><div class="stack"><span class="lock" style="--h:24px"><img src="/assets/brand/mark.svg" alt=""><img src="/assets/brand/wordmark.svg" alt="conntext"></span><span class="lock" style="--h:40px"><img src="/assets/brand/mark.svg" alt=""><img src="/assets/brand/wordmark.svg" alt="conntext"></span></div></div>
+    <div class="cell on-ink"><h3>워드마크 옆 · 잉크 바탕</h3><div class="stack"><span class="lock" style="--h:24px"><img src="/assets/brand/mark.svg" alt=""><img src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></span><span class="lock" style="--h:40px"><img src="/assets/brand/mark.svg" alt=""><img src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></span></div></div>
+    <div class="cell"><h3>브라우저 탭</h3><div class="tabs-mock"><span class="tab is-on"><img src="/assets/brand/favicon.svg" width="16" height="16" alt="">Conntext · 홈</span><span class="tab"><img src="/assets/brand/candidates/blank.svg" width="16" height="16" alt="">다른 탭</span></div>
+      <div class="tabs-mock tabs-mock--dark"><span class="tab is-on"><img src="/assets/brand/favicon.svg" width="16" height="16" alt="">Conntext · 홈</span><span class="tab"><img src="/assets/brand/candidates/blank.svg" width="16" height="16" alt="">다른 탭</span></div></div>
+  </div>
+</article>
+<article class="cand" id="a" aria-labelledby="h-a">
+  <header class="cand__head"><h2 id="h-a">A. 라벨 태그</h2><p>케이블 라벨 테이프 자체가 심볼입니다. 앱에서 메모 id에 붙는 V자 노치 태그와 같은 형태이고, 그 위에 n 두 개를 떨어뜨려 적었습니다. 이 제품이 라벨을 붙이는 일을 한다는 뜻입니다.</p>
+  <dl><dt>강점</dt><dd>앱·매뉴얼의 등급 태그와 같은 모양이라 제품 안에서 계속 되풀이되고, 워드마크의 노란 라벨과도 바로 이어집니다.</dd><dt>약점</dt><dd>16px에서는 n 두 개가 잔무늬로 뭉개져 "노치 있는 노란 띠"로만 남습니다. 잉크 바탕에서는 사각이 사라지고 태그만 떠 보입니다.</dd></dl></header>
+  <div class="cand__grid">
+    <div class="cell"><h3>밝은 바탕</h3><div class="row"><figure><img src="/assets/brand/candidates/mark-a.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure><figure><img src="/assets/brand/candidates/mark-a.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure><figure><img src="/assets/brand/candidates/mark-a.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure><figure><img src="/assets/brand/candidates/mark-a.svg" width="200" height="200" alt=""><figcaption>200</figcaption></figure></div></div>
+    <div class="cell on-ink"><h3>잉크 바탕</h3><div class="row"><figure><img src="/assets/brand/candidates/mark-a.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure><figure><img src="/assets/brand/candidates/mark-a.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure><figure><img src="/assets/brand/candidates/mark-a.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure><figure><img src="/assets/brand/candidates/mark-a.svg" width="200" height="200" alt=""><figcaption>200</figcaption></figure></div></div>
+    <div class="cell"><h3>16px · 32px 확대</h3><div class="row"><figure><img class="px" src="/assets/brand/candidates/a-16.png" width="96" height="96" alt="16px 렌더를 6배 확대"><figcaption>16px 실제 픽셀 ×6</figcaption></figure><figure><img class="px" src="/assets/brand/candidates/a-32.png" width="96" height="96" alt="32px 렌더를 3배 확대"><figcaption>32px 실제 픽셀 ×3</figcaption></figure></div></div>
+    <div class="cell"><h3>워드마크 옆</h3><div class="stack"><span class="lock" style="--h:24px"><img src="/assets/brand/candidates/mark-a.svg" alt=""><img src="/assets/brand/wordmark.svg" alt="conntext"></span><span class="lock" style="--h:40px"><img src="/assets/brand/candidates/mark-a.svg" alt=""><img src="/assets/brand/wordmark.svg" alt="conntext"></span></div></div>
+    <div class="cell on-ink"><h3>워드마크 옆 · 잉크 바탕</h3><div class="stack"><span class="lock" style="--h:24px"><img src="/assets/brand/candidates/mark-a.svg" alt=""><img src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></span><span class="lock" style="--h:40px"><img src="/assets/brand/candidates/mark-a.svg" alt=""><img src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></span></div></div>
+    <div class="cell"><h3>브라우저 탭</h3><div class="tabs-mock"><span class="tab is-on"><img src="/assets/brand/candidates/mark-a.svg" width="16" height="16" alt="">Conntext · 홈</span><span class="tab"><img src="/assets/brand/candidates/blank.svg" width="16" height="16" alt="">다른 탭</span></div>
+      <div class="tabs-mock tabs-mock--dark"><span class="tab is-on"><img src="/assets/brand/candidates/mark-a.svg" width="16" height="16" alt="">Conntext · 홈</span><span class="tab"><img src="/assets/brand/candidates/blank.svg" width="16" height="16" alt="">다른 탭</span></div></div>
+  </div>
+</article>
+<article class="cand" id="b" aria-labelledby="h-b">
+  <header class="cand__head"><h2 id="h-b">B. 넘겨주기</h2><p>메시지 시퀀스 차트에서 가져왔습니다. 세로 생명선 둘 사이를 노란 화살표 하나가 내려가며 건너갑니다. 한 세션에서 다음 세션으로 맥락이 건너간다는 뜻입니다.</p>
+  <dl><dt>강점</dt><dd>소개 페이지의 뼈대(시퀀스 차트)와 같은 그림이라, 페이지와 심볼이 한 이야기를 합니다.</dd><dt>약점</dt><dd>16px에서는 화살촉이 점으로 뭉개져 "두 선 사이의 노란 막대"로 읽힙니다. 노랑 면이 작아 conn 라벨과의 연결이 약하고, 크게 보면 글자 N이나 H로 읽힐 여지도 있습니다.</dd></dl></header>
+  <div class="cand__grid">
+    <div class="cell"><h3>밝은 바탕</h3><div class="row"><figure><img src="/assets/brand/candidates/mark-b.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure><figure><img src="/assets/brand/candidates/mark-b.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure><figure><img src="/assets/brand/candidates/mark-b.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure><figure><img src="/assets/brand/candidates/mark-b.svg" width="200" height="200" alt=""><figcaption>200</figcaption></figure></div></div>
+    <div class="cell on-ink"><h3>잉크 바탕</h3><div class="row"><figure><img src="/assets/brand/candidates/mark-b.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure><figure><img src="/assets/brand/candidates/mark-b.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure><figure><img src="/assets/brand/candidates/mark-b.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure><figure><img src="/assets/brand/candidates/mark-b.svg" width="200" height="200" alt=""><figcaption>200</figcaption></figure></div></div>
+    <div class="cell"><h3>16px · 32px 확대</h3><div class="row"><figure><img class="px" src="/assets/brand/candidates/b-16.png" width="96" height="96" alt="16px 렌더를 6배 확대"><figcaption>16px 실제 픽셀 ×6</figcaption></figure><figure><img class="px" src="/assets/brand/candidates/b-32.png" width="96" height="96" alt="32px 렌더를 3배 확대"><figcaption>32px 실제 픽셀 ×3</figcaption></figure></div></div>
+    <div class="cell"><h3>워드마크 옆</h3><div class="stack"><span class="lock" style="--h:24px"><img src="/assets/brand/candidates/mark-b.svg" alt=""><img src="/assets/brand/wordmark.svg" alt="conntext"></span><span class="lock" style="--h:40px"><img src="/assets/brand/candidates/mark-b.svg" alt=""><img src="/assets/brand/wordmark.svg" alt="conntext"></span></div></div>
+    <div class="cell on-ink"><h3>워드마크 옆 · 잉크 바탕</h3><div class="stack"><span class="lock" style="--h:24px"><img src="/assets/brand/candidates/mark-b.svg" alt=""><img src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></span><span class="lock" style="--h:40px"><img src="/assets/brand/candidates/mark-b.svg" alt=""><img src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></span></div></div>
+    <div class="cell"><h3>브라우저 탭</h3><div class="tabs-mock"><span class="tab is-on"><img src="/assets/brand/candidates/mark-b.svg" width="16" height="16" alt="">Conntext · 홈</span><span class="tab"><img src="/assets/brand/candidates/blank.svg" width="16" height="16" alt="">다른 탭</span></div>
+      <div class="tabs-mock tabs-mock--dark"><span class="tab is-on"><img src="/assets/brand/candidates/mark-b.svg" width="16" height="16" alt="">Conntext · 홈</span><span class="tab"><img src="/assets/brand/candidates/blank.svg" width="16" height="16" alt="">다른 탭</span></div></div>
+  </div>
+</article>
+<article class="cand" id="c" aria-labelledby="h-c">
+  <header class="cand__head"><h2 id="h-c">C. 케이블에 감긴 라벨</h2><p>잉크색 케이블 한 가닥이 칸을 가로지르고, 그 위에 노란 라벨 띠가 감겨 있습니다. 소개 페이지 사진의 장면을 기호로 줄였습니다.</p>
+  <dl><dt>강점</dt><dd>세 후보 중 16px에서 형태가 가장 잘 남고, 글자로 오독될 여지가 없습니다. 사진과 같은 장면이라 소개 페이지와 맞물립니다.</dd><dt>약점</dt><dd>밝은 사각 바탕이라 밝은 페이지 위에서는 칸의 경계가 옅습니다. 비스듬한 막대라 멀리서는 "금지 표시"나 형광펜으로 볼 수도 있습니다.</dd></dl></header>
+  <div class="cand__grid">
+    <div class="cell"><h3>밝은 바탕</h3><div class="row"><figure><img src="/assets/brand/candidates/mark-c.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure><figure><img src="/assets/brand/candidates/mark-c.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure><figure><img src="/assets/brand/candidates/mark-c.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure><figure><img src="/assets/brand/candidates/mark-c.svg" width="200" height="200" alt=""><figcaption>200</figcaption></figure></div></div>
+    <div class="cell on-ink"><h3>잉크 바탕</h3><div class="row"><figure><img src="/assets/brand/candidates/mark-c.svg" width="16" height="16" alt=""><figcaption>16</figcaption></figure><figure><img src="/assets/brand/candidates/mark-c.svg" width="32" height="32" alt=""><figcaption>32</figcaption></figure><figure><img src="/assets/brand/candidates/mark-c.svg" width="64" height="64" alt=""><figcaption>64</figcaption></figure><figure><img src="/assets/brand/candidates/mark-c.svg" width="200" height="200" alt=""><figcaption>200</figcaption></figure></div></div>
+    <div class="cell"><h3>16px · 32px 확대</h3><div class="row"><figure><img class="px" src="/assets/brand/candidates/c-16.png" width="96" height="96" alt="16px 렌더를 6배 확대"><figcaption>16px 실제 픽셀 ×6</figcaption></figure><figure><img class="px" src="/assets/brand/candidates/c-32.png" width="96" height="96" alt="32px 렌더를 3배 확대"><figcaption>32px 실제 픽셀 ×3</figcaption></figure></div></div>
+    <div class="cell"><h3>워드마크 옆</h3><div class="stack"><span class="lock" style="--h:24px"><img src="/assets/brand/candidates/mark-c.svg" alt=""><img src="/assets/brand/wordmark.svg" alt="conntext"></span><span class="lock" style="--h:40px"><img src="/assets/brand/candidates/mark-c.svg" alt=""><img src="/assets/brand/wordmark.svg" alt="conntext"></span></div></div>
+    <div class="cell on-ink"><h3>워드마크 옆 · 잉크 바탕</h3><div class="stack"><span class="lock" style="--h:24px"><img src="/assets/brand/candidates/mark-c.svg" alt=""><img src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></span><span class="lock" style="--h:40px"><img src="/assets/brand/candidates/mark-c.svg" alt=""><img src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></span></div></div>
+    <div class="cell"><h3>브라우저 탭</h3><div class="tabs-mock"><span class="tab is-on"><img src="/assets/brand/candidates/mark-c.svg" width="16" height="16" alt="">Conntext · 홈</span><span class="tab"><img src="/assets/brand/candidates/blank.svg" width="16" height="16" alt="">다른 탭</span></div>
+      <div class="tabs-mock tabs-mock--dark"><span class="tab is-on"><img src="/assets/brand/candidates/mark-c.svg" width="16" height="16" alt="">Conntext · 홈</span><span class="tab"><img src="/assets/brand/candidates/blank.svg" width="16" height="16" alt="">다른 탭</span></div></div>
+  </div>
+</article>
+</main>
+</body>
+</html>
