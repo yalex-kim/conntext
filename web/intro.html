@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conntext 인트로</title>
+<link rel="icon" href="/assets/brand/candidates/mark-b.svg" type="image/svg+xml">
+<style>
+  html, body { margin: 0; height: 100%; background: #f4f7fa; overflow: hidden; }
+  svg { display: block; width: 100vw; height: 100vh; }
+  .replay { position: fixed; right: 20px; bottom: 16px; font: 500 14px/1 system-ui, sans-serif; color: #4a5873;
+            background: none; border: 1px solid #c9cfd9; border-radius: 6px; padding: 8px 12px; cursor: pointer; }
+  .replay:hover { color: #101a2d; border-color: #4a5873; }
+  .replay:focus-visible { outline: 2px solid #145ec1; outline-offset: 2px; }
+  body.capture .replay { display: none; }
+</style>
+</head>
+<body>
+<svg id="stage" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid meet" role="img" aria-label="conntext 워드마크의 nn이 두 생명선이 되고, 노란 라벨이 그 사이를 건너가는 화살표가 되는 인트로">
+  <rect width="1920" height="1080" fill="#f4f7fa"/>
+  <rect id="label" fill="#f7d22a"/>
+  <path id="shaft" fill="none" stroke="#f7d22a" stroke-linecap="round"/><path id="head" fill="none" stroke="#f7d22a" stroke-linecap="round" stroke-linejoin="round"/>
+  <g id="glyphs" fill="none" stroke-linecap="round" stroke-linejoin="round"></g>
+  <g id="lock" fill="none" stroke-linecap="round" stroke-linejoin="round"></g>
+</svg>
+<button class="replay" type="button" id="replay">다시 보기</button>
+<script>
+// 워드마크 원본(wordmark.svg)의 글자 경로. 좌표는 워드마크 단위.
+const WM = {
+  label: { x: 0, y: -15, w: 210.5, h: 66, r: 9 },
+  conn: [
+    [18.25, 'M30.95 5.5A18 18 0 1 0 30.95 30.5'],
+    [67.25, 'M18 0A18 18 0 1 1 18 36A18 18 0 1 1 18 0Z'],
+    [117.25, 'M0 36V15A15 15 0 0 1 30 15V36'],
+    [163.25, 'M0 36V15A15 15 0 0 1 30 15V36'],
+  ],
+  text: [
+    [223.75, 'M7 -13V25A11 11 0 0 0 18 36H19M0 0H18'],
+    [254.75, 'M0 18H36A18 18 0 1 0 31.38 30.04'],
+    [304.25, 'M0 0L28 36M28 0L0 36'],
+    [345.75, 'M7 -13V25A11 11 0 0 0 18 36H19M0 0H18'],
+  ],
+};
+// 후보 B(mark-b.svg)의 좌표. 아이콘 단위 64.
+const ICON = {
+  left: 'M14 52V12',            // n의 시작점(왼쪽 아래)과 맞추려고 아래에서 위로
+  right: 'M50 52V12',
+  shaft: 'M17 26L45 38',
+  head: 'M35.23 40.13L45 38L39.81 29.45',
+};
+const C = { ink: '#101a2d', yellow: '#f7d22a', light: '#f4f7fa', life: '#c3cad6' };
+const DUR = 6.2;                          // 초
+const NS = 'http://www.w3.org/2000/svg';
+const $ = (id) => document.getElementById(id);
+
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const outC = (p) => 1 - Math.pow(1 - p, 3);
+const inOut = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+const outBack = (p) => { const c = 1.6; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+const mix = (h1, h2, p) => {
+  const a = h1.match(/\w\w/g).map((x) => parseInt(x, 16)), b = h2.match(/\w\w/g).map((x) => parseInt(x, 16));
+  return '#' + a.map((v, i) => Math.round(lerp(v, b[i], p)).toString(16).padStart(2, '0')).join('');
+};
+
+// 경로를 같은 개수의 점으로 뽑아 모핑한다.
+const probe = document.createElementNS(NS, 'path');
+$('stage').appendChild(probe);
+probe.setAttribute('visibility', 'hidden');
+function sample(d, n = 72) {
+  probe.setAttribute('d', d);
+  const L = probe.getTotalLength();
+  return Array.from({ length: n }, (_, i) => { const p = probe.getPointAtLength((L * i) / (n - 1)); return [p.x, p.y]; });
+}
+const toD = (pts) => 'M' + pts.map((p) => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join('L');
+
+// 화면 배치
+const S1 = 3, X1 = (1920 - 370 * S1) / 2, Y1 = 540 - 18 * S1;           // 처음 워드마크
+const NN_CX = X1 + S1 * 155.25;                                          // nn 가운데
+const K = 420 / 64, IX = 960 - 210, IY = 540 - 210;                      // 큰 아이콘
+const LK = 150, LS = 1.62;                                               // 마지막 잠금 배치(아이콘 + 워드마크)
+const LW = LK + 52 + 370 * LS, LX = (1920 - LW) / 2;
+const LIX = LX, LIY = 540 - LK / 2, LWX = LX + LK + 52, LWY = 540 - 18 * LS;
+
+const nPts = sample(WM.conn[2][1]);
+const leftPts = sample(ICON.left);
+const rightPts = sample(ICON.right);
+const shaftEl = $('shaft'), headEl = $('head');
+shaftEl.setAttribute('d', ICON.shaft); headEl.setAttribute('d', ICON.head);
+const shaftLen = (() => { probe.setAttribute('d', ICON.shaft); return probe.getTotalLength(); })();
+const headLen = (() => { probe.setAttribute('d', ICON.head); return probe.getTotalLength(); })();
+
+// 글자 요소 만들기
+function makeGlyphs(parent, list, cls) {
+  return list.map(([dx, d]) => {
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', d);
+    p.dataset.dx = dx;
+    p.setAttribute('class', cls);
+    parent.appendChild(p);
+    p._len = (() => { probe.setAttribute('d', d); return probe.getTotalLength(); })();
+    return p;
+  });
+}
+const g = $('glyphs');
+const connEls = makeGlyphs(g, WM.conn, 'conn');
+const textEls = makeGlyphs(g, WM.text, 'text');
+const n1 = connEls[2], n2 = connEls[3];
+const lock = $('lock');
+const lockLabel = document.createElementNS(NS, 'rect'); lockLabel.setAttribute('fill', C.yellow); lock.appendChild(lockLabel);
+const lockConn = makeGlyphs(lock, WM.conn, 'lconn');
+const lockText = makeGlyphs(lock, WM.text, 'ltext');
+
+function place(el, dx, sx, sy, s, sw, color, draw = 1, op = 1) {
+  el.setAttribute('transform', `translate(${sx + s * dx} ${sy}) scale(${s})`);
+  el.setAttribute('stroke-width', sw);
+  el.setAttribute('stroke', color);
+  el.setAttribute('stroke-dasharray', el._len);
+  el.setAttribute('stroke-dashoffset', el._len * (1 - draw));
+  el.setAttribute('opacity', op);
+}
+
+function render(t) {
+  // 1) 워드마크 등장 0.0–1.1
+  const aLab = outC(seg(t, 0.05, 0.55));
+  const aConn = (i) => inOut(seg(t, 0.2 + i * 0.08, 0.75 + i * 0.08));
+  const aText = (i) => inOut(seg(t, 0.45 + i * 0.07, 1.0 + i * 0.07));
+  // 2) 나머지 글자가 빠지고 nn만 남는다 1.5–2.1
+  const out = inOut(seg(t, 1.5, 2.1));
+  // 3) 라벨이 정사각 아이콘으로, nn이 가운데로 1.7–2.5
+  const sq = inOut(seg(t, 1.75, 2.55));
+  // 4) 라벨이 잉크색 칸이 되고, n 두 개가 두 생명선이 된다 2.3–3.1
+  const mo = inOut(seg(t, 2.3, 3.1));
+  const col = inOut(seg(t, 2.25, 2.85));
+  // 5) 노란 화살표가 왼쪽 생명선에서 오른쪽으로 건너간다 3.1–3.75
+  const ar = inOut(seg(t, 3.1, 3.6));
+  const hd = outC(seg(t, 3.5, 3.8));
+  // 6) 잠금 배치 4.2–4.95, 워드마크는 그 뒤에
+  const lk = inOut(seg(t, 4.2, 4.95));
+  const lkIn = outC(seg(t, 4.75, 5.35));
+
+  // 큰 아이콘 → 잠금 아이콘으로 옮기는 변환(아이콘 단위 기준)
+  const ik = lerp(K, LK / 64, lk), ix = lerp(IX, LIX, lk), iy = lerp(IY, LIY, lk);
+
+  // 라벨: 워드마크 라벨 → 아이콘 사각형
+  const lab = WM.label;
+  const L0 = { x: X1 + S1 * lab.x, y: Y1 + S1 * lab.y, w: S1 * lab.w * aLab, h: S1 * lab.h, r: S1 * lab.r };
+  const L1 = { x: ix, y: iy, w: 64 * ik, h: 64 * ik, r: 14 * ik };
+  const lb = $('label');
+  lb.setAttribute('fill', mix(C.yellow, C.ink, col));
+  lb.setAttribute('x', lerp(L0.x, L1.x, sq)); lb.setAttribute('y', lerp(L0.y, L1.y, sq));
+  lb.setAttribute('width', lerp(L0.w, L1.w, sq)); lb.setAttribute('height', lerp(L0.h, L1.h, sq));
+  lb.setAttribute('rx', lerp(L0.r, L1.r, sq));
+
+  // 화살표: 아이콘 단위 → 화면
+  [[shaftEl, shaftLen, ar], [headEl, headLen, hd]].forEach(([el, len, p]) => {
+    el.setAttribute('transform', `translate(${ix} ${iy}) scale(${ik})`);
+    el.setAttribute('stroke-width', 6);
+    el.setAttribute('stroke-dasharray', len);
+    el.setAttribute('stroke-dashoffset', len * (1 - p));
+    el.setAttribute('opacity', p > 0 ? 1 : 0);
+  });
+
+  // c, o, text: 처음엔 그려지고, 2단계에서 흩어지며 사라진다
+  const nnShift = (960 - NN_CX) * sq;
+  connEls.forEach((el, i) => {
+    if (i >= 2) return;
+    place(el, +el.dataset.dx, X1 - 60 * out, Y1, S1, 6.5, C.ink, aConn(i), 1 - out);
+  });
+  textEls.forEach((el, i) => {
+    place(el, +el.dataset.dx, X1 + 60 * out, Y1, S1, 6.5, C.ink, aText(i), 1 - out);
+  });
+
+  // n 두 개: 화면 좌표의 점으로 바꿔 모핑
+  [[n1, leftPts, C.life], [n2, rightPts, C.life]].forEach(([el, target, color], j) => {
+    const dx = +el.dataset.dx;
+    const from = nPts.map(([x, y]) => [X1 + nnShift + S1 * (dx + x), Y1 + S1 * y]);
+    const to = target.map(([x, y]) => [ix + ik * x, iy + ik * y]);
+    if (mo <= 0 && col <= 0) {
+      // 모핑 전: 원래 경로를 그대로 그린다(그려지는 애니메이션 포함)
+      el.setAttribute('d', WM.conn[2 + j][1]);
+      place(el, dx, X1 + nnShift, Y1, S1, 6.5, C.ink, aConn(2 + j), 1);
+    } else {
+      const pts = from.map((p, i) => [lerp(p[0], to[i][0], mo), lerp(p[1], to[i][1], mo)]);
+      el.setAttribute('d', toD(pts));
+      el.removeAttribute('transform');
+      el.removeAttribute('stroke-dasharray');
+      el.removeAttribute('stroke-dashoffset');
+      el.setAttribute('stroke-width', lerp(6.5 * S1, 3.5 * ik, mo));
+      el.setAttribute('stroke', mix(C.ink, color, col));
+      el.setAttribute('opacity', 1);
+    }
+  });
+
+  // 잠금 배치의 워드마크
+  lock.setAttribute('opacity', lkIn);
+  lock.setAttribute('transform', `translate(${(1 - lkIn) * 40} 0)`);
+  lockLabel.setAttribute('x', LWX + LS * lab.x); lockLabel.setAttribute('y', LWY + LS * lab.y);
+  lockLabel.setAttribute('width', LS * lab.w); lockLabel.setAttribute('height', LS * lab.h); lockLabel.setAttribute('rx', LS * lab.r);
+  lockConn.forEach((el) => place(el, +el.dataset.dx, LWX, LWY, LS, 6.5, C.ink));
+  lockText.forEach((el) => place(el, +el.dataset.dx, LWX, LWY, LS, 6.5, C.ink));
+}
+
+window.render = render;
+window.DURATION = DUR;
+if (new URLSearchParams(location.search).has('capture')) {
+  document.body.classList.add('capture');
+  render(0);
+} else {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let t0 = null;
+  const tick = (now) => { if (t0 === null) t0 = now; const t = (now - t0) / 1000; render(Math.min(t, DUR)); if (t < DUR) requestAnimationFrame(tick); };
+  const play = () => { t0 = null; requestAnimationFrame(tick); };
+  if (reduce) render(DUR); else play();
+  $('replay').addEventListener('click', () => (reduce ? render(DUR) : play()));
+}
+</script>
+</body>
+</html>
