@@ -1,0 +1,8 @@
+{
+  "origin": "generated",
+  "model": "gemini-nano-banana-2.1",
+  "prompt": "Macro photograph of a neat bundle of dark navy and black patch cables running diagonally across the frame inside a server rack, each cable wrapped with a blank bright yellow wrap-around cable label tag (no text, no printing, completely plain yellow labels). One yellow label in sharp focus in the lower right third, the others falling into soft blur. Cool daylight from the left, deep navy shadows, shallow depth of field, clean industrial look, realistic photo, no people, no logos, no letters or numbers anywhere.",
+  "source": "cables-raw.png (JPEG 1376x768), converted with ffmpeg libwebp",
+  "width": 1376,
+  "height": 768
+}

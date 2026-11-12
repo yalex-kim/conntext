@@ -1,0 +1,12 @@
+import { createRequire } from 'node:module';
+const { chromium } = createRequire('/volume1/dev/vcat/')('playwright');
+const [,, url, out, w='1440', h='900', scroll='0', sel=''] = process.argv;
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: +w, height: +h }, reducedMotion: 'reduce' });
+const errs=[]; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type()==='error') errs.push(m.text()) });
+await p.goto(url, { waitUntil: 'networkidle' });
+if (sel) await p.locator(sel).first().scrollIntoViewIfNeeded(); else await p.evaluate(y => window.scrollTo(0, y), +scroll);
+await p.waitForTimeout(500);
+await p.screenshot({ path: out });
+console.log('ok', out, errs.join(' | '));
+await b.close();

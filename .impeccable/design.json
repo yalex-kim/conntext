@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-12T00:00:00Z",
+  "title": "Design System: Conntext",
+  "extensions": {
+    "colorMeta": {
+      "marker": { "role": "primary", "displayName": "라벨 테이프 노랑", "canonical": "oklch(0.87 0.17 95)", "tonalRamp": ["oklch(0.30 0.06 95)", "oklch(0.42 0.09 93)", "oklch(0.55 0.12 91)", "oklch(0.68 0.15 89)", "oklch(0.78 0.16 88)", "oklch(0.87 0.17 95)", "oklch(0.93 0.11 95)", "oklch(0.96 0.06 95)"] },
+      "marker-deep": { "role": "primary", "displayName": "눌린 노랑", "canonical": "oklch(0.78 0.16 88)" },
+      "marker-soft": { "role": "primary", "displayName": "옅은 노랑", "canonical": "oklch(0.96 0.06 95)" },
+      "marker-hover": { "role": "primary", "displayName": "노랑 hover", "canonical": "oklch(0.84 0.17 93)" },
+      "team": { "role": "secondary", "displayName": "팀 지식 파랑", "canonical": "oklch(0.50 0.17 258)", "tonalRamp": ["oklch(0.20 0.07 258)", "oklch(0.30 0.11 258)", "oklch(0.40 0.14 258)", "oklch(0.50 0.17 258)", "oklch(0.62 0.14 258)", "oklch(0.74 0.10 258)", "oklch(0.85 0.06 258)", "oklch(0.95 0.03 258)"] },
+      "team-ink": { "role": "secondary", "displayName": "팀 글자 파랑", "canonical": "oklch(0.45 0.16 258)" },
+      "team-soft": { "role": "secondary", "displayName": "옅은 파랑", "canonical": "oklch(0.95 0.03 258)" },
+      "on-team": { "role": "secondary", "displayName": "파랑·빨강 위 흰 글자", "canonical": "#ffffff" },
+      "state": { "role": "tertiary", "displayName": "진행 상태 초록", "canonical": "oklch(0.60 0.14 158)", "tonalRamp": ["oklch(0.22 0.05 158)", "oklch(0.33 0.08 158)", "oklch(0.45 0.11 158)", "oklch(0.60 0.14 158)", "oklch(0.70 0.13 158)", "oklch(0.80 0.10 158)", "oklch(0.88 0.06 158)", "oklch(0.95 0.035 158)"] },
+      "state-ink": { "role": "tertiary", "displayName": "초록 글자", "canonical": "oklch(0.45 0.11 158)" },
+      "state-soft": { "role": "tertiary", "displayName": "옅은 초록", "canonical": "oklch(0.95 0.035 158)" },
+      "warn": { "role": "tertiary", "displayName": "주의 주황", "canonical": "oklch(0.72 0.15 62)", "tonalRamp": ["oklch(0.25 0.05 58)", "oklch(0.38 0.09 58)", "oklch(0.50 0.12 58)", "oklch(0.62 0.14 60)", "oklch(0.72 0.15 62)", "oklch(0.82 0.11 66)", "oklch(0.90 0.07 70)", "oklch(0.96 0.045 70)"] },
+      "warn-ink": { "role": "tertiary", "displayName": "주의 글자", "canonical": "oklch(0.50 0.12 58)" },
+      "warn-soft": { "role": "tertiary", "displayName": "옅은 주황", "canonical": "oklch(0.96 0.045 70)" },
+      "danger": { "role": "tertiary", "displayName": "위험 빨강", "canonical": "oklch(0.55 0.20 27)", "tonalRamp": ["oklch(0.22 0.07 27)", "oklch(0.33 0.12 27)", "oklch(0.44 0.18 27)", "oklch(0.55 0.20 27)", "oklch(0.66 0.16 27)", "oklch(0.77 0.11 27)", "oklch(0.86 0.07 27)", "oklch(0.955 0.025 27)"] },
+      "danger-ink": { "role": "tertiary", "displayName": "위험 글자", "canonical": "oklch(0.50 0.19 27)" },
+      "danger-soft": { "role": "tertiary", "displayName": "옅은 빨강", "canonical": "oklch(0.955 0.025 27)" },
+      "ink": { "role": "neutral", "displayName": "잉크 남색", "canonical": "oklch(0.22 0.04 262)", "tonalRamp": ["oklch(0.22 0.04 262)", "oklch(0.29 0.04 262)", "oklch(0.36 0.035 262)", "oklch(0.45 0.035 262)", "oklch(0.62 0.03 262)", "oklch(0.78 0.025 262)", "oklch(0.88 0.012 262)", "oklch(0.975 0.005 250)"] },
+      "ink-2": { "role": "neutral", "displayName": "보조 잉크", "canonical": "oklch(0.45 0.035 262)" },
+      "ink-3": { "role": "neutral", "displayName": "흐린 잉크(본문 금지)", "canonical": "oklch(0.62 0.03 262)" },
+      "line": { "role": "neutral", "displayName": "선", "canonical": "oklch(0.88 0.012 262)" },
+      "line-strong": { "role": "neutral", "displayName": "진한 선", "canonical": "oklch(0.66 0.025 262)" },
+      "ground": { "role": "neutral", "displayName": "차가운 바탕", "canonical": "oklch(0.975 0.005 250)" },
+      "surface": { "role": "neutral", "displayName": "면", "canonical": "oklch(0.995 0.002 250)" },
+      "sunken": { "role": "neutral", "displayName": "움푹한 면", "canonical": "oklch(0.952 0.008 255)" },
+      "on-ink": { "role": "neutral", "displayName": "잉크 위 글자", "canonical": "oklch(0.975 0.005 250)" },
+      "on-ink-2": { "role": "neutral", "displayName": "잉크 위 보조 글자", "canonical": "oklch(0.78 0.025 262)" },
+      "ink-hover": { "role": "neutral", "displayName": "잉크 위 눌림", "canonical": "oklch(0.29 0.04 262)" },
+      "ink-line": { "role": "neutral", "displayName": "잉크 위 선", "canonical": "oklch(0.36 0.035 262)" },
+      "superseded": { "role": "neutral", "displayName": "대체됨 회색", "canonical": "oklch(0.90 0.01 262)" },
+      "term-dim": { "role": "neutral", "displayName": "터미널 흐린 줄", "canonical": "oklch(0.68 0.03 262)" },
+      "term-ok": { "role": "neutral", "displayName": "터미널 성공", "canonical": "oklch(0.80 0.13 158)" },
+      "term-err": { "role": "neutral", "displayName": "터미널 오류", "canonical": "oklch(0.75 0.14 27)" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "소개 페이지 첫 화면 제목 하나에만." },
+      "headline": { "displayName": "Headline", "purpose": "문서 h1, 설치 절 제목." },
+      "title": { "displayName": "Title", "purpose": "h2, 앱 화면 제목, 위키 문서 제목." },
+      "title-ui": { "displayName": "Title UI", "purpose": "앱 안 구획 제목, 대화상자 제목." },
+      "body": { "displayName": "Body", "purpose": "문서 본문, 메모 원문. 최대 68ch, keep-all." },
+      "body-ui": { "displayName": "Body UI", "purpose": "버튼, 입력, 표, 목록 줄." },
+      "label": { "displayName": "Label", "purpose": "입력 라벨, 표 머리, 메타." },
+      "mono-tag": { "displayName": "Mono tag", "purpose": "라벨 태그의 메모 id, 저장소 칩, 목차 번호." },
+      "mono-code": { "displayName": "Mono code", "purpose": "터미널 블록의 명령과 출력." }
+    },
+    "shadows": [
+      { "name": "shadow-3", "value": "0 16px 40px -8px oklch(0.22 0.04 262 / 0.22), 0 4px 10px -4px oklch(0.22 0.04 262 / 0.10)", "purpose": "가리는 층: 대화상자, 입력창 팝오버, 토스트, 모바일 서랍과 시트." },
+      { "name": "focus-ring-input", "value": "0 0 0 3px oklch(0.50 0.17 258 / 0.18)", "purpose": "입력 포커스 둘레(테두리는 팀 파랑)." },
+      { "name": "focus-ring-capture", "value": "0 0 0 3px oklch(0.87 0.17 95 / 0.45)", "purpose": "앱 메모 입력창 포커스(저장 모드)." },
+      { "name": "primary-bottom", "value": "inset 0 -1px 0 oklch(0.78 0.16 88 / 0.6)", "purpose": "노랑 주 동작 버튼 아랫단의 얇은 눌림 선." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "서랍, 대화상자, 토스트, 스위치의 들어오는 움직임." },
+      { "name": "dur-1", "value": "120ms", "purpose": "hover, 테두리, 배경 전환." },
+      { "name": "dur-2", "value": "200ms", "purpose": "대화상자·토스트 등장, 서랍, 스위치." },
+      { "name": "dur-3", "value": "400ms", "purpose": "긴 전환. reduced-motion이면 셋 다 0." },
+      { "name": "scroll-drawn-arrows", "value": "animation-timeline: view(); range entry 100% cover 42%", "purpose": "소개 페이지 시퀀스 차트: 스크롤 위치에 맞춰 화살표가 그려지고 태그가 건너감. @supports와 no-preference에서만." }
+    ],
+    "breakpoints": [
+      { "name": "wiki-3col", "value": "1279px" },
+      { "name": "landing-mid", "value": "1180px" },
+      { "name": "home-stack", "value": "1100px" },
+      { "name": "manual-mid", "value": "1080px" },
+      { "name": "split-single", "value": "1023px" },
+      { "name": "app-drawer", "value": "899px" },
+      { "name": "site-narrow", "value": "860px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "화면에서 가장 중요한 한 동작. 노랑 채움, 잉크 글자.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">저장</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px; font-family: var(--font-ui, SUIT, system-ui, sans-serif); font-size: 14px; font-weight: 600; line-height: 1; border-radius: 6px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; } .ds-btn-primary { background: var(--marker, oklch(0.87 0.17 95)); color: var(--ink, oklch(0.22 0.04 262)); border: 1px solid var(--marker-deep, oklch(0.78 0.16 88)); box-shadow: inset 0 -1px 0 oklch(0.78 0.16 88 / 0.6); } .ds-btn-primary:hover { background: oklch(0.84 0.17 93); } .ds-btn-primary:active { background: var(--marker-deep, oklch(0.78 0.16 88)); } .ds-btn:focus-visible { outline: 2px solid var(--team, oklch(0.50 0.17 258)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "기본 버튼. 면 색에 진한 선 테두리.",
+      "html": "<button class=\"ds-btn2\">되돌리기</button>",
+      "css": ".ds-btn2 { display: inline-flex; align-items: center; height: 36px; padding: 0 16px; font-family: var(--font-ui, SUIT, system-ui, sans-serif); font-size: 14px; font-weight: 600; line-height: 1; color: var(--ink, oklch(0.22 0.04 262)); background: var(--surface, oklch(0.995 0.002 250)); border: 1px solid var(--line-strong, oklch(0.66 0.025 262)); border-radius: 6px; cursor: pointer; transition: background-color 120ms ease; } .ds-btn2:hover { background: var(--sunken, oklch(0.952 0.008 255)); } .ds-btn2:active { background: oklch(0.92 0.01 258); } .ds-btn2:focus-visible { outline: 2px solid var(--team, oklch(0.50 0.17 258)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Ink Button",
+      "kind": "button",
+      "refersTo": "button-ink",
+      "description": "노란 면 위의 주 동작. 잉크 채움.",
+      "html": "<div class=\"ds-onmarker\"><a class=\"ds-btn-ink\" href=\"#\">웹 열기<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4.5 12h15M13.5 6l6 6-6 6\"/></svg></a></div>",
+      "css": ".ds-onmarker { background: var(--marker, oklch(0.87 0.17 95)); padding: 24px; } .ds-btn-ink { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 24px; font-family: var(--font-ui, SUIT, system-ui, sans-serif); font-size: 16px; font-weight: 600; color: var(--on-ink, oklch(0.975 0.005 250)); background: var(--ink, oklch(0.22 0.04 262)); border: 1px solid var(--ink, oklch(0.22 0.04 262)); border-radius: 6px; text-decoration: none; transition: background-color 120ms ease; } .ds-btn-ink:hover { background: var(--ink-hover, oklch(0.29 0.04 262)); } .ds-btn-ink:focus-visible { outline: 2px solid var(--ink, oklch(0.22 0.04 262)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "라벨 + 입력 + 도움말. 포커스는 파랑 테두리와 옅은 둘레.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-label\" for=\"ds-i\">토큰 이름</label><input class=\"ds-input\" id=\"ds-i\" placeholder=\"예: 노트북\"><p class=\"ds-hint\">나중에 어느 기기인지 알아볼 이름입니다.</p></div>",
+      "css": ".ds-field { display: grid; gap: 6px; max-width: 320px; } .ds-label { font-size: 13px; font-weight: 600; color: var(--ink, oklch(0.22 0.04 262)); } .ds-hint { margin: 0; font-size: 13px; color: var(--ink-2, oklch(0.45 0.035 262)); } .ds-input { height: 36px; padding: 0 12px; font-family: var(--font-ui, SUIT, system-ui, sans-serif); font-size: 14px; color: var(--ink, oklch(0.22 0.04 262)); background: var(--surface, oklch(0.995 0.002 250)); border: 1px solid var(--line-strong, oklch(0.66 0.025 262)); border-radius: 6px; transition: border-color 120ms ease, box-shadow 120ms ease; } .ds-input::placeholder { color: var(--ink-2, oklch(0.45 0.035 262)); } .ds-input:hover { border-color: var(--ink-2, oklch(0.45 0.035 262)); } .ds-input:focus, .ds-input:focus-visible { outline: none; border-color: var(--team, oklch(0.50 0.17 258)); box-shadow: 0 0 0 3px oklch(0.50 0.17 258 / 0.18); }"
+    },
+    {
+      "name": "등급 라벨 태그",
+      "kind": "chip",
+      "refersTo": "tag-mine",
+      "description": "메모 id를 와이어 마커처럼. 등급은 색과 형태(채움/점선/취소선)로 구분.",
+      "html": "<div class=\"ds-tags\"><span class=\"ds-tag\">m:142</span><span class=\"ds-tag ds-tag-team\">t:12</span><span class=\"ds-tag ds-tag-state\">m:34</span><span class=\"ds-tag ds-tag-cand\">m:35</span><span class=\"ds-tag ds-tag-old\">m:9</span></div>",
+      "css": ".ds-tags { display: flex; gap: 8px; align-items: center; } .ds-tag { display: inline-flex; align-items: center; height: 22px; padding: 0 12px 0 7px; font-family: var(--font-mono, D2Coding, ui-monospace, monospace); font-size: 12.5px; line-height: 1; font-variant-numeric: tabular-nums; color: var(--ink, oklch(0.22 0.04 262)); background: var(--marker, oklch(0.87 0.17 95)); border-radius: 3px 0 0 3px; clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 50%, 100% 100%, 0 100%); } .ds-tag-team { background: var(--team, oklch(0.50 0.17 258)); color: #fff; } .ds-tag-state { background: var(--state, oklch(0.60 0.14 158)); } .ds-tag-cand { background: var(--surface, oklch(0.995 0.002 250)); border: 1px dashed var(--ink, oklch(0.22 0.04 262)); border-right: 0; } .ds-tag-old { background: oklch(0.90 0.01 262); color: var(--ink-2, oklch(0.45 0.035 262)); text-decoration: line-through; } .ds-tag:hover { filter: brightness(0.96); }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "종류·범위·저장소 표식.",
+      "html": "<div class=\"ds-chips\"><span class=\"ds-chip\">주제 문서</span><span class=\"ds-chip ds-chip-scope\">팀 공간</span><span class=\"ds-chip ds-chip-mono\">ble-gateway</span></div>",
+      "css": ".ds-chips { display: flex; gap: 6px; } .ds-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 3px; font-family: var(--font-ui, SUIT, system-ui, sans-serif); font-size: 12px; font-weight: 600; line-height: 1; color: var(--ink-2, oklch(0.45 0.035 262)); border: 1px solid var(--line-strong, oklch(0.66 0.025 262)); } .ds-chip-scope { background: var(--sunken, oklch(0.952 0.008 255)); border-color: transparent; } .ds-chip-mono { font-family: var(--font-mono, D2Coding, ui-monospace, monospace); font-weight: 400; font-size: 12.5px; color: var(--ink, oklch(0.22 0.04 262)); border-color: var(--line, oklch(0.88 0.012 262)); background: var(--surface, oklch(0.995 0.002 250)); }"
+    },
+    {
+      "name": "앱 레일",
+      "kind": "nav",
+      "refersTo": "rail-item",
+      "description": "잉크 레일. 현재 항목은 노랑 아이콘과 노치 있는 노란 조각.",
+      "html": "<nav class=\"ds-rail\"><a class=\"ds-rail-item\" href=\"#\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 11 12 4l8.5 7\"/><path d=\"M6 9.5V20h12V9.5\"/><path d=\"M10 20v-5h4v5\"/></svg>홈</a><a class=\"ds-rail-item\" href=\"#\" aria-current=\"page\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 6.5h17l-3 5.5 3 5.5h-17z\"/><path d=\"M7 12h6.5\"/></svg>메모</a></nav>",
+      "css": ".ds-rail { display: grid; gap: 2px; width: 208px; padding: 12px; background: var(--ink, oklch(0.22 0.04 262)); } .ds-rail-item { position: relative; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 8px; font-family: var(--font-ui, SUIT, system-ui, sans-serif); font-size: 14px; font-weight: 600; color: var(--on-ink-2, oklch(0.78 0.025 262)); text-decoration: none; border-radius: 6px; transition: background-color 120ms ease, color 120ms ease; } .ds-rail-item:hover { background: var(--ink-hover, oklch(0.29 0.04 262)); color: var(--on-ink, oklch(0.975 0.005 250)); } .ds-rail-item[aria-current=\"page\"] { background: var(--ink-hover, oklch(0.29 0.04 262)); color: var(--on-ink, oklch(0.975 0.005 250)); } .ds-rail-item[aria-current=\"page\"] svg { color: var(--marker, oklch(0.87 0.17 95)); } .ds-rail-item[aria-current=\"page\"]::after { content: \"\"; position: absolute; right: 10px; top: 50%; width: 12px; height: 8px; margin-top: -4px; background: var(--marker, oklch(0.87 0.17 95)); clip-path: polygon(0 0, 100% 0, 70% 50%, 100% 100%, 0 100%); } .ds-rail-item:focus-visible { outline: 2px solid var(--marker, oklch(0.87 0.17 95)); outline-offset: 2px; }"
+    },
+    {
+      "name": "패널",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "면 색 + 1px 선 + 10px 모서리. 그림자 없음.",
+      "html": "<div class=\"ds-panel\"><p class=\"ds-panel-t\">이어서 할 일</p><p class=\"ds-panel-b\">게이트웨이 재시작 순서를 정리해야 합니다.</p></div>",
+      "css": ".ds-panel { max-width: 360px; padding: 12px 16px 16px; background: var(--surface, oklch(0.995 0.002 250)); border: 1px solid var(--line, oklch(0.88 0.012 262)); border-radius: 10px; font-family: var(--font-ui, SUIT, system-ui, sans-serif); } .ds-panel-t { margin: 0 0 8px; font-size: 13px; color: var(--ink-2, oklch(0.45 0.035 262)); } .ds-panel-b { margin: 0; font-size: 14px; line-height: 1.65; color: var(--ink, oklch(0.22 0.04 262)); }"
+    },
+    {
+      "name": "터미널 블록",
+      "kind": "custom",
+      "refersTo": "terminal",
+      "description": "잉크 블록 안의 명령. 프롬프트 노랑, 성공 줄 밝은 초록.",
+      "html": "<div class=\"ds-term\"><div class=\"ds-term-head\"><span>bash</span><button class=\"ds-term-copy\">복사</button></div><pre><span class=\"ds-p\">$ </span>claude plugin install conntext@conntext\n<span class=\"ds-ok\">저장됨 m:12</span></pre></div>",
+      "css": ".ds-term { max-width: 520px; background: var(--ink, oklch(0.22 0.04 262)); color: var(--on-ink, oklch(0.975 0.005 250)); border-radius: 10px; overflow: hidden; } .ds-term-head { display: flex; justify-content: space-between; align-items: center; min-height: 40px; padding: 4px 6px 4px 24px; border-bottom: 1px solid var(--ink-line, oklch(0.36 0.035 262)); font-family: var(--font-mono, D2Coding, ui-monospace, monospace); font-size: 13px; color: oklch(0.68 0.03 262); } .ds-term-copy { height: 28px; padding: 0 12px; font-size: 13px; font-weight: 600; color: var(--on-ink-2, oklch(0.78 0.025 262)); background: transparent; border: 0; border-radius: 5px; cursor: pointer; } .ds-term-copy:hover { background: var(--ink-hover, oklch(0.29 0.04 262)); color: var(--on-ink, oklch(0.975 0.005 250)); } .ds-term-copy:focus-visible { outline: 2px solid var(--marker, oklch(0.87 0.17 95)); outline-offset: 2px; } .ds-term pre { margin: 0; padding: 16px 24px; font-family: var(--font-mono, D2Coding, ui-monospace, monospace); font-size: 14px; line-height: 1.65; } .ds-p { color: var(--marker, oklch(0.87 0.17 95)); } .ds-ok { color: oklch(0.80 0.13 158); }"
+    },
+    {
+      "name": "프레임 포맷 그림",
+      "kind": "custom",
+      "description": "규격서 문법의 가로 막대. 필드 너비가 양, 위에 D2Coding 눈금, 등급 색 채움, 남은 부분은 빗금.",
+      "html": "<figure class=\"ds-ff\"><div class=\"ds-ff-ruler\"><span style=\"left:0\">0</span><span style=\"left:50%\">750</span><span style=\"left:100%\">1500</span></div><div class=\"ds-ff-bar\"><div class=\"ds-f ds-f-mine\" style=\"width:20%\">지시</div><div class=\"ds-f ds-f-team\" style=\"width:8%\">팀</div><div class=\"ds-f ds-f-state\" style=\"width:12%\">상태</div><div class=\"ds-f ds-f-idx\" style=\"width:30%\">내 지식 색인</div><div class=\"ds-f ds-f-free\" style=\"width:30%\">남은 예산</div></div></figure>",
+      "css": ".ds-ff { margin: 0; max-width: 560px; font-family: var(--font-ui, SUIT, system-ui, sans-serif); } .ds-ff-ruler { position: relative; height: 22px; margin-bottom: 4px; font-family: var(--font-mono, D2Coding, ui-monospace, monospace); font-size: 11.5px; color: var(--ink-2, oklch(0.45 0.035 262)); } .ds-ff-ruler span { position: absolute; bottom: 0; translate: -50% 0; padding-bottom: 8px; line-height: 1; } .ds-ff-ruler span:first-child { translate: 0 0; } .ds-ff-ruler span:last-child { translate: -100% 0; } .ds-ff-ruler span::after { content: \"\"; position: absolute; left: 50%; bottom: 0; height: 6px; border-left: 1px solid var(--ink-3, oklch(0.62 0.03 262)); } .ds-ff-bar { display: flex; height: 40px; border: 1.5px solid var(--ink, oklch(0.22 0.04 262)); background: var(--surface, oklch(0.995 0.002 250)); } .ds-f { display: flex; align-items: center; padding: 0 8px; overflow: hidden; white-space: nowrap; font-size: 12.5px; font-weight: 600; color: var(--ink, oklch(0.22 0.04 262)); border-right: 1px solid var(--ink, oklch(0.22 0.04 262)); } .ds-f:last-child { border-right: 0; } .ds-f-mine { background: var(--marker, oklch(0.87 0.17 95)); } .ds-f-team { background: var(--team, oklch(0.50 0.17 258)); color: #fff; } .ds-f-state { background: var(--state, oklch(0.60 0.14 158)); } .ds-f-idx { background: var(--marker-soft, oklch(0.96 0.06 95)); } .ds-f-free { background: repeating-linear-gradient(135deg, transparent 0 5px, var(--line, oklch(0.88 0.012 262)) 5px 6px); color: var(--ink-2, oklch(0.45 0.035 262)); font-weight: 500; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "케이블 라벨과 프로토콜 규격서",
+    "overview": "Conntext의 시각 세계는 연결 엔지니어가 매일 보는 두 물건에서 왔습니다. 하나는 케이블에 감아 \"이 선이 어디로 가는지\" 적는 노란 라벨이고, 다른 하나는 규격서의 그림 문법(메시지 시퀀스 차트의 참여자 상자와 생명선, 프레임 포맷 그림의 필드와 눈금, 절 번호)입니다. 메모가 하는 일이 라벨이 하는 일과 같다는 점이 이 세계의 근거입니다. 노랑은 브랜드의 얼굴이자 \"직접 적은 메모\"라는 등급이고, 잉크색 남색은 케이블과 선과 글자입니다.\n\n밀도는 작업 도구답게 촘촘하되 차분합니다. 차가운 밝은 회백색 바탕 위에 가는 선으로 구획을 나누고, 색은 의미가 있을 때만 씁니다(노랑 = 내 메모와 주 동작, 파랑 = 팀 지식, 초록 = 진행 상태). 깊이는 그림자보다 선과 면의 톤으로 만듭니다. 화면을 떠 있게 하는 것은 대화상자, 팝오버, 토스트, 모바일 서랍뿐입니다.\n\n이 세계가 거부하는 것은 두 기본값입니다. 개발자 도구의 기본값(검은 화면 전체 + 네온 강조)과 메모 앱의 기본값(크림색 종이 + 세리프)입니다. 어두운 면은 터미널 블록과 레일처럼 \"케이블 색\"으로 한정해 씁니다. 네오브루탈리즘도 아닙니다. 노랑과 잉크를 쓰지만 굳은 오프셋 그림자나 검은 상자로 누르지 않고, 선은 가늘고 정확하게 긋습니다.",
+    "keyCharacteristics": [
+      "라벨 테이프 노랑과 잉크 남색 두 축, 그 위에 등급 색 셋(파랑·초록·회색)",
+      "메모 id는 오른쪽 끝을 V자로 자른 라벨 태그, 등급은 색과 형태로 동시에 구분",
+      "규격서 그림 문법: 1.5px 선, 1px 머리카락 선, 눈금 위 D2Coding 숫자",
+      "차가운 밝은 바탕, 선과 톤으로 만든 평평한 층",
+      "Paperlogy(제목) + SUIT(UI·본문) + D2Coding(코드·id·수치)",
+      "한국어 본문: 단어 단위 줄바꿈(`keep-all`), 68ch 폭"
+    ],
+    "rules": [
+      { "name": "The 노랑 위 잉크 Rule", "body": "노랑 면 위 글자는 언제나 잉크입니다. 노랑 글자는 잉크 바탕 위에서만 씁니다. 밝은 바탕 위 노랑 글자는 없습니다.", "section": "colors" },
+      { "name": "The 의미 있는 색 Rule", "body": "파랑·초록·주황·빨강은 등급이나 상태를 말할 때만 나타납니다. 장식용 강조색은 없습니다. 노랑조차 \"내 메모, 주 동작, 현재 위치, 브랜드\" 중 하나를 뜻합니다.", "section": "colors" },
+      { "name": "The 차가운 바탕 Rule", "body": "바탕은 푸른 기가 도는 회백색(hue 250)입니다. 크림색·종이색 바탕을 쓰지 않습니다.", "section": "colors" },
+      { "name": "The 데이터만 고정폭 Rule", "body": "D2Coding은 코드, 명령어, 메모 id, 저장소 이름, 수치, 눈금에만 씁니다. 기술적으로 보이려고 본문이나 제목에 쓰지 않습니다. 표와 눈금의 숫자는 `tabular-nums`입니다.", "section": "typography" },
+      { "name": "The 단어 단위 줄바꿈 Rule", "body": "한국어 본문은 `word-break: keep-all`, 제목은 `text-wrap: balance`, 문단은 `text-wrap: pretty`입니다. 대문자 변환이나 넓은 자간의 작은 라벨은 쓰지 않습니다.", "section": "typography" },
+      { "name": "The 표준 뼈대 Rule", "body": "앱은 익숙한 작업 도구의 뼈대(레일, 목록과 상세)를 유지하고, 세계는 태그와 그림에서 드러냅니다. 숫자 타일을 늘어놓은 대시보드 격자나 같은 크기 카드 줄로 화면을 채우지 않습니다.", "section": "layout" },
+      { "name": "The 뜨는 것만 그림자 Rule", "body": "그림자는 가리는 층(대화상자, 팝오버, 토스트, 서랍)에만 있습니다. 쉬고 있는 면은 선과 톤으로 나눕니다. 굳은 오프셋 그림자는 쓰지 않습니다.", "section": "elevation" },
+      { "name": "The 노치는 라벨에만 Rule", "body": "V자 노치는 \"라벨이 붙었다\"는 뜻일 때만 씁니다(등급 태그, 번호, 현재 위치). 일반 버튼이나 패널의 모서리에 쓰지 않습니다.", "section": "shapes" },
+      { "name": "The 아치는 심볼에만 Rule", "body": "계단형 이중 아치(`nn`)는 심볼(`mark.svg`)과 파비콘에만 씁니다. 화면 장식으로 다시 그리지 않습니다.", "section": "shapes" }
+    ],
+    "dos": [
+      "Do 노랑 위 글자는 잉크(`--ink`)로, 노랑 글자는 잉크 바탕 위에서만 씁니다.",
+      "Do 메모 id는 언제나 등급 라벨 태그로 그리고, 등급을 색과 형태(채움/점선/취소선) 둘 다로 구분합니다.",
+      "Do 색은 `base.css` 토큰으로만 씁니다. 그림에는 `--dg-*`, 터미널에는 `--term-*`, 잉크 바탕 영역에는 `.on-ink`를 씁니다.",
+      "Do 그림은 규격서 문법으로 그립니다: 1.5px 테두리, 1px 구분선, D2Coding 눈금, 채운 삼각 화살촉.",
+      "Do 아이콘은 `icons.svg` 한 벌(24 격자, 선 1.75, 둥근 끝, currentColor)을 쓰고, 없으면 같은 규칙으로 그립니다.",
+      "Do 브라우저 기본 표면을 팔레트에 맞춥니다: 선택 색 노랑, 포커스 링 2px 팀 파랑(잉크 위는 노랑), 얇은 스크롤바, 밑줄 띄움 0.22em.",
+      "Do 움직임은 `--ease-out`과 120/200/400ms로 짧게 쓰고, `prefers-reduced-motion`에서는 끕니다."
+    ],
+    "donts": [
+      "Don't 크림색·종이색 바탕이나 세리프 본문을 쓰지 않습니다.",
+      "Don't 페이지 전체를 어두운 화면으로 만들거나 네온 강조색을 쓰지 않습니다. 어두운 면은 레일, 터미널, 토스트, 위 띠에 한정합니다.",
+      "Don't 굳은 오프셋 그림자, 굵은 검은 상자로 누른 네오브루탈리즘 표현을 쓰지 않습니다.",
+      "Don't `--ink-3`를 본문 글자에 쓰지 않습니다.",
+      "Don't D2Coding을 본문이나 제목에 쓰지 않습니다.",
+      "Don't 제목 위에 작은 라벨(아이브로)이나 대문자 넓은 자간 라벨을 얹지 않습니다.",
+      "Don't 이모지나 유니코드 기호로 아이콘을 대신하지 않습니다.",
+      "Don't 계단형 이중 아치를 심볼 밖에서 장식으로 쓰지 않습니다."
+    ]
+  }
+}

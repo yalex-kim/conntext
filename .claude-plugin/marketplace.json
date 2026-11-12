@@ -1,0 +1,8 @@
+{
+  "name": "conntext",
+  "owner": { "name": "Connectivity 팀" },
+  "metadata": { "description": "Conntext: 에이전트 메모리와 팀 지식" },
+  "plugins": [
+    { "name": "conntext", "version": "0.1.0", "source": "./plugin", "description": "적어 둔 맥락이 다음 세션과 다른 에이전트로 이어집니다." }
+  ]
+}

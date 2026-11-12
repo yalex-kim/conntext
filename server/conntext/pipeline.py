@@ -1,0 +1,676 @@
+"""메모 ingest 파이프라인.
+
+원문 메모는 수정하지 않고 보존한다. 분류, 관계 판정, 주제 문서는 그 위에 얹는 파생 정보이고
+모두 되돌릴 수 있다. 흐름은 다음과 같다.
+
+  마스킹 → 저장·임베딩(즉시 검색 가능) → 분석(종류·개체·관계·주제) → 적용 → 주제 문서 재생성 예약
+"""
+import re, time
+from . import access, config, db, embed, jobs, llm, masking, retrieval
+from .access import BadRequest, Forbidden, NotFound
+
+CHANGE_WORDS = re.compile(r"변경|바뀌|바뀜|이제|더 ?이상|대신|수정|정정|→|->|아니라|취소|연기|앞당")
+INSTRUCTION_WORDS = re.compile(r"항상|언제나|절대|하지 ?마|말 ?것|줘(?![가-힣])|주세요|할 것(?![가-힣])|쓰지 ?마|우선해|\balways\b|\bnever\b", re.I)
+STATE_WORDS = re.compile(r"대기 ?중|진행 ?중|작업 ?중|회신 ?대기|까지 ?완료|남은 ?일|다음에 ?할|하던 ?중|보류|WIP|in progress", re.I)
+TITLES = "과장|팀장|책임|수석|선임|대리|부장|차장|사원|매니저|프로|님|리드|파트장|실장|상무|이사"
+PERSON = re.compile(rf"([가-힣]{{1,4}})\s?({TITLES})(?![가-힣])")
+ASCII_TERM = re.compile(r"`([^`]{2,40})`|\b([A-Z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*|[a-z]+(?:[-_][a-z0-9]+)+|[a-z]+[A-Z][A-Za-z0-9]*)\b")
+STOP_TERMS = {"TODO", "WIP", "OK", "QA", "PR", "API", "ID", "URL", "I", "A", "The", "It", "This"}
+
+
+# ── 규칙 경로 ───────────────────────────────────────────────────────
+def heuristic_entities(text):
+    out, seen = [], set()
+    for m in PERSON.finditer(text):
+        name = f"{m.group(1)} {m.group(2)}"
+        if name not in seen:
+            seen.add(name)
+            out.append({"name": name, "kind": "person"})
+    for m in ASCII_TERM.finditer(text):
+        name = (m.group(1) or m.group(2)).strip()
+        if name in STOP_TERMS or len(name) < 2 or name in seen:
+            continue
+        seen.add(name)
+        out.append({"name": name, "kind": "system" if re.search(r"[-_.]|[a-z][A-Z]", name) else "term"})
+    return out[:8]
+
+
+def heuristic_kind(text):
+    if STATE_WORDS.search(text):
+        return "state"
+    if INSTRUCTION_WORDS.search(text) and len(text) < 160:
+        return "instruction"
+    return "knowledge"
+
+
+def _title(text):
+    t = re.sub(r"\s+", " ", text).strip()
+    t = re.split(r"(?<=[.!?。])\s|\n", t)[0]
+    return t[:30] + ("…" if len(t) > 30 else "")
+
+
+TOPIC_MARK = re.compile(r"^(.{2,28}?)(?:\([^)]{0,40}\))?(?:은|는|:)(?=\s)")
+
+
+def topic_phrase(text):
+    """한국어의 주제 조사(은/는)나 콜론 앞부분을 주제 문구로 쓴다. 없으면 앞의 두세 단어."""
+    t = re.sub(r"[`*_]", "", re.sub(r"\s+", " ", text)).strip()
+    m = TOPIC_MARK.match(t)
+    if m:
+        ph = m.group(1).strip()
+        if ph not in ("원인", "결정", "주의", "참고", "결론", "이유") and len(ph) >= 2:
+            return re.sub(r"(에서|에는|에서는|의 경우)$", "", ph).strip() or ph
+        t = t[m.end():].strip()
+        m2 = TOPIC_MARK.match(t)
+        if m2:
+            return m2.group(1).strip()
+    words = t.split(" ")
+    return " ".join(words[:3])[:28]
+
+
+def heuristic_analyze(text, candidates, topics, space_id):
+    kind = heuristic_kind(text)
+    ents = heuristic_entities(text)
+    res = {"kind": kind, "title": _title(text), "entities": ents, "relation": "none", "target_id": None,
+           "related_ids": [], "topic_id": None, "topic_title": None}
+    same_kind = [c for c in candidates if c["kind"] == kind or kind == "knowledge"]
+    if same_kind:
+        top = same_kind[0]
+        cos = top["cos"]
+        if cos >= 0.72:
+            res.update(relation="duplicate", target_id=top["id"])
+        elif cos >= 0.33 and CHANGE_WORDS.search(text):
+            res.update(relation="update", target_id=top["id"])
+        elif cos >= 0.30:
+            res.update(relation="supplement", target_id=top["id"])
+        elif cos >= 0.16:
+            res.update(relation="related", related_ids=[top["id"]])
+        res["related_ids"] = [c["id"] for c in same_kind[1:4] if c["cos"] >= 0.2 and c["id"] != res["target_id"]]
+    if kind == "knowledge" and res["relation"] in ("none", "related"):
+        # 주제 문구가 기존 주제 제목과 충분히 가까우면 거기에 붙이고, 아니면 새 주제를 만든다.
+        # 개체가 겹친다는 이유만으로는 합치지 않는다(BLE, OTA 같은 넓은 개체가 모든 메모를 한 문서로 끌어모은다).
+        phrase = topic_phrase(text)
+        pv, best, best_s = embed.embed(phrase), None, 0.0
+        for t in topics:
+            sc = embed.cosine(pv, embed.embed(t["title"]))
+            if sc > best_s:
+                best, best_s = t, sc
+        if best and best_s >= 0.6:
+            res["topic_id"] = best["id"]
+        else:
+            res["topic_title"] = phrase
+    return res
+
+
+def heuristic_topic_summary(memos):
+    active = [m for m in memos if m["status"] == "active"]
+    old = [m for m in memos if m["status"] == "superseded"]
+    lines = []
+    for m in active:
+        mark = " (미확인)" if m["trust"] == "low" else ""
+        lines.append(f"- {m['body'].strip()}{mark} [m:{m['id']}]")
+    if old:
+        lines.append("\n## 이전 기록")
+        for m in old:
+            lines.append(f"- 이전에는: {m['body'].strip()} [m:{m['id']}]")
+    return "\n".join(lines)
+
+
+# ── 분석 ────────────────────────────────────────────────────────────
+LLM_CANDIDATES = 8
+
+
+def llm_candidates(found, memo, space_id):
+    """LLM에 넘길 후보: 검색 상위 후보(유사도 컷 없음)에 같은 저장소의 최근 메모를 더한다. 중복 없이 최대 8건."""
+    out, seen = [], {memo["id"]}
+    for c in found:
+        if c["id"] not in seen:
+            seen.add(c["id"])
+            out.append(c)
+    if memo.get("project_key") and len(out) < LLM_CANDIDATES:
+        for r in db.q("SELECT id, body, kind, created_at FROM memos WHERE space_id=? AND project_key=? AND status='active' "
+                      "AND kind IN ('knowledge','instruction') AND id!=? ORDER BY created_at DESC, id DESC LIMIT ?",
+                      space_id, memo["project_key"], memo["id"], LLM_CANDIDATES):
+            if r["id"] not in seen and len(out) < LLM_CANDIDATES:
+                seen.add(r["id"])
+                out.append(dict(r))
+    return out[:LLM_CANDIDATES]
+
+
+def analyze(user_id, memo, space_id, forced_kind=None):
+    found = retrieval.search([space_id], memo["body"], memo.get("project_key"), limit=5, exclude_ids=(memo["id"],),
+                             min_score=0.0, statuses=("active",), kinds=("knowledge", "instruction"))
+    topics = db.q("SELECT id, title FROM topics WHERE space_id=? ORDER BY updated_at DESC LIMIT 40", space_id)
+    out = None
+    if llm.provider() != "heuristic":
+        # 유사도 컷(0.1)은 규칙 경로용이다. 표현이 다른 관련 메모를 놓치므로 LLM에는 컷 없이 넓게 넘긴다.
+        cands = llm_candidates(found, memo, space_id)
+        lines = [f"새 메모:\n{memo['body']}\n"]
+        if memo.get("project_key"):
+            lines.append(f"작성 위치(저장소): {memo['project_key']}\n")
+        lines.append("후보 메모:" if cands else "후보 메모: 없음")
+        for c in cands:
+            lines.append(f"- id {c['id']} ({time.strftime('%Y-%m-%d', time.localtime(c['created_at']))}, {c['kind']}): {c['body'][:400]}")
+        lines.append("\n기존 주제:" if topics else "\n기존 주제: 없음")
+        for t in topics:
+            lines.append(f"- id {t['id']}: {t['title']}")
+        out = llm.complete_json("analyze", llm.ANALYZE_SYSTEM, "\n".join(lines), llm.ANALYZE_SCHEMA, user_id)
+        if out:
+            cand_ids = {c["id"] for c in cands}
+            topic_ids = {t["id"] for t in topics}
+            if out.get("target_id") not in cand_ids:
+                out["target_id"] = None
+                if out.get("relation") in ("duplicate", "update", "supplement"):
+                    out["relation"] = "none"
+            out["related_ids"] = [i for i in out.get("related_ids") or [] if i in cand_ids and i != out.get("target_id")]
+            if out.get("topic_id") not in topic_ids:
+                out["topic_id"] = None
+            out["_by"] = "llm"
+    if out is None:
+        cands = [c for c in found if c["cos"] >= 0.1]
+        out = heuristic_analyze(memo["body"], cands, topics, space_id)
+        out["_by"] = "rule"
+    if forced_kind:
+        out["kind"] = forced_kind
+    return out
+
+
+def _ensure_topic(space_id, title, project_key=None, origin_topic_id=None):
+    title = re.sub(r"\s+", " ", title).strip()[:60] or "제목 없음"
+    row = db.one("SELECT id FROM topics WHERE space_id=? AND lower(title)=lower(?)", space_id, title)
+    if row:
+        return row["id"], False
+    now = db.now()
+    tid = db.insert("topics", space_id=space_id, title=title, project_key=project_key, origin_topic_id=origin_topic_id,
+                    dirty=1, created_at=now, updated_at=now)
+    return tid, True
+
+
+def _attach(memo_id, topic_id):
+    db.ex("INSERT OR IGNORE INTO memo_topics(memo_id, topic_id) VALUES(?,?)", memo_id, topic_id)
+    mark_dirty(topic_id)
+
+
+def mark_dirty(topic_id):
+    db.ex("UPDATE topics SET dirty=1, updated_at=? WHERE id=?", db.now(), topic_id)
+    jobs.enqueue("topic_summary", {"topic_id": topic_id}, dedupe=True)
+
+
+def _link(a, b, relation):
+    if a == b:
+        return
+    db.ex("INSERT OR REPLACE INTO links(a_memo, b_memo, relation, created_at) VALUES(?,?,?,?)", a, b, relation, db.now())
+
+
+def _set_entities(memo_id, space_id, ents):
+    for e in ents or []:
+        name = (e.get("name") or "").strip()[:60]
+        if not name:
+            continue
+        row = db.one("SELECT id FROM entities WHERE space_id=? AND name=?", space_id, name)
+        eid = row["id"] if row else db.insert("entities", space_id=space_id, name=name, kind=e.get("kind") or "term")
+        db.ex("INSERT OR IGNORE INTO memo_entities(memo_id, entity_id) VALUES(?,?)", memo_id, eid)
+
+
+def _topics_of(memo_id):
+    return [r["topic_id"] for r in db.q("SELECT topic_id FROM memo_topics WHERE memo_id=?", memo_id)]
+
+
+# ── 저장 ────────────────────────────────────────────────────────────
+def remember(user, text, *, space_id=None, scope=None, project_key=None, kind=None, source="manual", trust="high",
+             origin_session_id=None, origin_memo_id=None, source_acl=None, expires_at=None, replaces_id=None,
+             topic_hint=None, origin_topic_id=None, do_analyze=True):
+    text = (text or "").strip()
+    if not text:
+        raise BadRequest("저장할 내용이 비어 있습니다.")
+    if len(text) > 20000:
+        raise BadRequest("메모가 너무 깁니다(최대 20,000자). 나눠서 저장하세요.")
+    t0 = time.time()
+    uid = user["id"]
+    space_id = space_id or access.personal_space_id(uid)
+    body, masked = masking.mask(text)
+    if not body.strip():
+        raise BadRequest("비공개 처리 후 남은 내용이 없습니다.")
+    if scope is None:
+        scope = "project" if project_key else "global"
+    if scope == "global" and kind != "state":
+        pk = None
+    else:
+        pk = project_key
+    now = db.now()
+    mid = db.insert("memos", space_id=space_id, author_id=uid, body=body, title=_title(body), kind=kind or "knowledge",
+                    source=source, trust=trust, scope=scope, project_key=pk, status="active",
+                    origin_session_id=origin_session_id, origin_memo_id=origin_memo_id,
+                    source_acl=source_acl or None, masked_count=masked, embedding=embed.pack(embed.embed(body)),
+                    pipeline_version=config.PIPELINE_VERSION, created_at=now, updated_at=now, expires_at=expires_at)
+    db.ex("INSERT INTO memos_fts(rowid, body, title) VALUES(?,?,?)", mid, body, _title(body))
+    db.trace("store", f"masked={masked}", memo_id=mid, ms=(time.time() - t0) * 1000)
+    memo = db.one("SELECT * FROM memos WHERE id=?", mid)
+    detail = {"relation": "none", "target_id": None, "topic_ids": [], "created_topic_ids": [], "masked": masked}
+
+    if kind == "state" or not do_analyze:
+        a = {"kind": kind or "knowledge", "title": _title(body), "entities": heuristic_entities(body), "relation": "none",
+             "target_id": None, "related_ids": [], "topic_id": None, "topic_title": topic_hint, "_by": "skip"}
+    else:
+        t1 = time.time()
+        a = analyze(uid, memo, space_id, forced_kind=kind)
+        db.trace("analyze", f"{a['_by']}:{a['kind']}:{a['relation']}", memo_id=mid, ms=(time.time() - t1) * 1000)
+    if replaces_id:
+        a.update(relation="update", target_id=replaces_id)
+    new_kind = a["kind"]
+    db.ex("UPDATE memos SET kind=?, title=? WHERE id=?", new_kind, (a.get("title") or _title(body))[:60], mid)
+    db.ex("UPDATE memos_fts SET title=? WHERE rowid=?", (a.get("title") or "")[:60], mid)
+    if new_kind == "state" and not expires_at:
+        days = db.policy("retention").get("state_days", 14)
+        db.ex("UPDATE memos SET expires_at=?, trust=CASE WHEN trust='high' THEN 'temp' ELSE trust END WHERE id=?", now + days * 86400, mid)
+    _set_entities(mid, space_id, a.get("entities"))
+
+    rel, target_id = a["relation"], a.get("target_id")
+    target = db.one("SELECT * FROM memos WHERE id=? AND space_id=?", target_id, space_id) if target_id else None
+    if rel in ("duplicate", "update", "supplement") and not target:
+        rel = "none"
+    # 확인되지 않은 세션 추출 후보가 사람이 적은 메모를 대체하지는 못한다.
+    if rel == "update" and trust == "low" and target["trust"] != "low":
+        rel = "supplement"
+    detail["relation"], detail["target_id"] = rel, target["id"] if target and rel != "none" else None
+
+    topic_ids = []
+    if rel == "duplicate":
+        db.ex("UPDATE memos SET status='duplicate', superseded_by=? WHERE id=?", target["id"], mid)
+        db.ex("UPDATE memos SET updated_at=? WHERE id=?", now, target["id"])
+        _link(mid, target["id"], "duplicate")
+        topic_ids = _topics_of(target["id"])
+    elif rel == "update":
+        detail["prev_target_status"] = target["status"]
+        db.ex("UPDATE memos SET status='superseded', superseded_by=?, updated_at=? WHERE id=?", mid, now, target["id"])
+        _link(mid, target["id"], "supersedes")
+        for tid in _topics_of(target["id"]):
+            _attach(mid, tid)
+            topic_ids.append(tid)
+        if target["kind"] != new_kind and not kind:
+            db.ex("UPDATE memos SET kind=? WHERE id=?", target["kind"], mid)
+            new_kind = target["kind"]
+    elif rel == "supplement":
+        _link(mid, target["id"], "supplements")
+        for tid in _topics_of(target["id"]):
+            _attach(mid, tid)
+            topic_ids.append(tid)
+    for rid in a.get("related_ids") or []:
+        _link(mid, rid, "related")
+
+    if new_kind == "knowledge" and not topic_ids and rel != "duplicate":
+        tid, created = None, False
+        if a.get("topic_id") and db.val("SELECT 1 FROM topics WHERE id=? AND space_id=?", a["topic_id"], space_id):
+            tid = a["topic_id"]
+        else:
+            title = topic_hint or a.get("topic_title") or a.get("title") or _title(body)
+            tid, created = _ensure_topic(space_id, title, pk if scope == "project" else None, origin_topic_id)
+        _attach(mid, tid)
+        topic_ids.append(tid)
+        if created:
+            detail["created_topic_ids"].append(tid)
+    detail["topic_ids"] = topic_ids
+    detail["kind"] = new_kind
+    eid = db.insert("ingest_events", user_id=uid, space_id=space_id, memo_id=mid, action="remember", detail=detail, created_at=now)
+    db.metric("latency", "ingest", (time.time() - t0) * 1000, user_id=uid)
+    return describe(mid, event_id=eid, detail=detail)
+
+
+def describe(memo_id, event_id=None, detail=None):
+    """저장 결과를 사람이 읽는 한 줄과 함께 돌려준다. 터미널과 웹이 같은 문구를 쓴다."""
+    m = db.one("SELECT * FROM memos WHERE id=?", memo_id)
+    detail = detail or {}
+    topics = db.q("SELECT t.id, t.title FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", memo_id)
+    if not topics and detail.get("topic_ids"):
+        topics = db.q(f"SELECT id, title FROM topics WHERE id IN ({','.join('?' * len(detail['topic_ids']))})", *detail["topic_ids"])
+    target = db.one("SELECT id, body, created_at FROM memos WHERE id=?", detail["target_id"]) if detail.get("target_id") else None
+    kind_ko = {"instruction": "지시·선호", "knowledge": "지식", "state": "진행 상태"}[m["kind"]]
+    scope_ko = f"저장소 {short_project(m['project_key'])}" if m["scope"] == "project" and m["project_key"] else "전체"
+    where = ", ".join(f"[{t['title']}]" for t in topics) if topics else {"instruction": "항상 적용 목록", "state": "진행 상태"}.get(m["kind"], "미분류")
+    lines = [f"저장됨 m:{m['id']} → {where} · {kind_ko} · 범위: {scope_ko}"]
+    rel = detail.get("relation")
+    if target and rel == "update":
+        lines.append(f"이전 메모 1건 대체: \"{_short(target['body'])}\" ({_date(target['created_at'])})")
+    elif target and rel == "duplicate":
+        lines[0] = f"이미 있는 메모와 같은 내용이라 새로 만들지 않고 m:{target['id']}에 합쳤습니다 → {where}"
+    elif target and rel == "supplement":
+        lines.append(f"관련 메모에 이어 붙임: \"{_short(target['body'])}\"")
+    if detail.get("created_topic_ids"):
+        lines.append("새 주제 문서를 만들었습니다.")
+    if detail.get("masked"):
+        lines.append(f"민감 정보 {detail['masked']}건을 마스킹했습니다.")
+    return {"memo_id": m["id"], "event_id": event_id, "kind": m["kind"], "scope": m["scope"], "project_key": m["project_key"],
+            "status": m["status"], "relation": rel or "none", "target_id": target["id"] if target else None,
+            "topics": topics, "masked": detail.get("masked", 0), "message": "\n".join(lines)}
+
+
+def short_project(pk):
+    if not pk:
+        return ""
+    return re.sub(r"\.git$", "", pk.rstrip("/")).split("/")[-1] or pk
+
+
+def _short(s, n=42):
+    s = re.sub(r"\s+", " ", s).strip()
+    return s[:n] + ("…" if len(s) > n else "")
+
+
+def _date(ts):
+    return time.strftime("%-m/%-d", time.localtime(ts))
+
+
+# ── 되돌리기·삭제·확인 ──────────────────────────────────────────────
+def undo(user, event_id):
+    ev = db.one("SELECT * FROM ingest_events WHERE id=?", event_id)
+    if not ev or ev["user_id"] != user["id"]:
+        raise NotFound("되돌릴 내역을 찾을 수 없습니다.")
+    if ev["undone_at"]:
+        raise BadRequest("이미 되돌린 내역입니다.")
+    d = db.js(ev["detail"], {})
+    now = db.now()
+    mid = ev["memo_id"]
+    if ev["action"] in ("remember", "promote"):
+        db.ex("UPDATE memos SET status='deleted', updated_at=? WHERE id=?", now, mid)
+        if d.get("relation") == "update" and d.get("target_id"):
+            db.ex("UPDATE memos SET status=?, superseded_by=NULL, updated_at=? WHERE id=? AND superseded_by=?",
+                  d.get("prev_target_status") or "active", now, d["target_id"], mid)
+        for tid in d.get("topic_ids") or []:
+            db.ex("DELETE FROM memo_topics WHERE memo_id=? AND topic_id=?", mid, tid)
+            if tid in (d.get("created_topic_ids") or []) and not db.val("SELECT 1 FROM memo_topics WHERE topic_id=?", tid):
+                db.ex("DELETE FROM topics WHERE id=?", tid)
+            else:
+                mark_dirty(tid)
+        db.ex("DELETE FROM links WHERE a_memo=?", mid)
+    elif ev["action"] == "forget":
+        db.ex("UPDATE memos SET status=?, updated_at=? WHERE id=?", d.get("prev_status") or "active", now, mid)
+        if d.get("restored_superseded"):
+            db.ex("UPDATE memos SET status='superseded', superseded_by=? WHERE id=?", mid, d["restored_superseded"])
+        for tid in _topics_of(mid):
+            mark_dirty(tid)
+    elif ev["action"] == "kind_change":
+        if db.val("SELECT kind FROM memos WHERE id=?", mid) != d.get("kind"):
+            raise BadRequest("그 뒤에 종류가 다시 바뀌어 이 내역은 되돌릴 수 없습니다. 최근 내역부터 되돌리세요.")
+        _undo_kind_change(mid, d, now)
+    elif ev["action"] in ("confirm", "auto_promoted"):
+        db.ex("UPDATE memos SET trust='low', updated_at=? WHERE id=?", now, mid)
+    elif ev["action"] == "dismiss":
+        db.ex("UPDATE memos SET status='active', updated_at=? WHERE id=?", now, mid)
+    else:
+        raise BadRequest("되돌릴 수 없는 내역입니다.")
+    db.ex("UPDATE ingest_events SET undone_at=? WHERE id=?", now, event_id)
+    db.trace("undo", ev["action"], memo_id=mid)
+    return {"ok": True, "memo_id": mid, "message": "되돌렸습니다."}
+
+
+def undo_last(user):
+    ev = db.one("SELECT id FROM ingest_events WHERE user_id=? AND undone_at IS NULL AND action IN ('remember','forget','promote','kind_change') "
+                "ORDER BY id DESC LIMIT 1", user["id"])
+    if not ev:
+        raise NotFound("되돌릴 최근 내역이 없습니다.")
+    return undo(user, ev["id"])
+
+
+def forget(user, memo_id):
+    m = access.get_memo(user, memo_id, write=True)
+    if m["status"] in ("deleted",):
+        raise BadRequest("이미 삭제된 메모입니다.")
+    now = db.now()
+    detail = {"prev_status": m["status"]}
+    # 이 메모가 대체했던 이전 메모가 있으면 다시 살린다. 지운 내용 때문에 옛 내용까지 묻히면 안 된다.
+    prev = db.one("SELECT id FROM memos WHERE superseded_by=? AND status='superseded'", memo_id)
+    if prev:
+        db.ex("UPDATE memos SET status='active', superseded_by=NULL, updated_at=? WHERE id=?", now, prev["id"])
+        detail["restored_superseded"] = prev["id"]
+    db.ex("UPDATE memos SET status='deleted', updated_at=? WHERE id=?", now, memo_id)
+    for tid in _topics_of(memo_id):
+        mark_dirty(tid)
+    eid = db.insert("ingest_events", user_id=user["id"], space_id=m["space_id"], memo_id=memo_id, action="forget", detail=detail, created_at=now)
+    db.trace("forget", "ok", memo_id=memo_id)
+    msg = f"삭제함 m:{memo_id} \"{_short(m['body'])}\""
+    if prev:
+        msg += f"\n이 메모가 대체했던 이전 메모 m:{prev['id']}를 다시 유효로 돌렸습니다."
+    return {"ok": True, "memo_id": memo_id, "event_id": eid, "message": msg}
+
+
+KINDS = ("instruction", "knowledge", "state")
+
+
+def _pick_topic(memo):
+    """사용자가 종류를 knowledge로 바꿨을 때 붙일 주제. LLM을 다시 부르지 않고 규칙 경로의 주제 판정을 쓴다."""
+    topics = db.q("SELECT id, title FROM topics WHERE space_id=? ORDER BY updated_at DESC LIMIT 40", memo["space_id"])
+    a = heuristic_analyze(memo["body"], [], topics, memo["space_id"])
+    if a.get("topic_id"):
+        return a["topic_id"], False
+    pk = memo["project_key"] if memo["scope"] == "project" else None
+    return _ensure_topic(memo["space_id"], a.get("topic_title") or memo["title"] or _title(memo["body"]), pk)
+
+
+def set_kind(user, memo_id, kind):
+    """자동 분류된 종류를 사용자가 바로잡는다. 종류는 원문이 아닌 파생 정보라 새 판을 만들지 않고 제자리에서 바꾼다."""
+    if kind not in KINDS:
+        raise BadRequest(f"종류는 {', '.join(KINDS)} 중 하나여야 합니다.")
+    m = access.get_memo(user, memo_id, write=True)
+    if m["status"] != "active":
+        raise BadRequest("유효한 메모만 고칠 수 있습니다.")
+    if m["kind"] == kind:
+        raise BadRequest("이미 그 종류입니다.")
+    now = db.now()
+    prev_topics = db.q("SELECT t.id, t.title, t.project_key FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", memo_id)
+    detail = {"prev_kind": m["kind"], "kind": kind, "prev_topics": prev_topics, "prev_expires_at": m["expires_at"],
+              "prev_trust": m["trust"], "topic_ids": [], "created_topic_ids": []}
+    expires, trust = m["expires_at"], m["trust"]
+    if kind == "state":
+        expires = now + db.policy("retention").get("state_days", 14) * 86400
+        trust = "temp" if trust == "high" else trust
+    elif m["kind"] == "state":
+        expires = None
+        trust = "high" if trust == "temp" else trust
+    db.ex("UPDATE memos SET kind=?, expires_at=?, trust=?, updated_at=? WHERE id=?", kind, expires, trust, now, memo_id)
+    if kind == "knowledge":
+        if not prev_topics:
+            tid, created = _pick_topic(m)
+            _attach(memo_id, tid)
+            detail["topic_ids"].append(tid)
+            if created:
+                detail["created_topic_ids"].append(tid)
+    else:
+        # instruction과 state는 주제 문서에 들어가지 않는다. 비게 된 주제는 다시 생성할 때 정리된다.
+        for t in prev_topics:
+            db.ex("DELETE FROM memo_topics WHERE memo_id=? AND topic_id=?", memo_id, t["id"])
+            mark_dirty(t["id"])
+    eid = db.insert("ingest_events", user_id=user["id"], space_id=m["space_id"], memo_id=memo_id, action="kind_change",
+                    detail=detail, created_at=now)
+    db.trace("kind_change", f"{m['kind']}->{kind}", memo_id=memo_id)
+    res = describe(memo_id, event_id=eid, detail=detail)
+    kind_ko = {"instruction": "지시·선호", "knowledge": "지식", "state": "진행 상태"}
+    where = ", ".join(f"[{t['title']}]" for t in res["topics"]) or {"instruction": "항상 적용 목록", "state": "진행 상태"}.get(kind, "미분류")
+    res["message"] = f"종류를 바꿈 m:{memo_id}: {kind_ko[m['kind']]} → {kind_ko[kind]} · {where}"
+    if kind == "state":
+        res["message"] += f"\n진행 상태는 {db.policy('retention').get('state_days', 14)}일 뒤 만료됩니다."
+    return res
+
+
+def _undo_kind_change(mid, d, now):
+    db.ex("UPDATE memos SET kind=?, expires_at=?, trust=?, updated_at=? WHERE id=?",
+          d["prev_kind"], d.get("prev_expires_at"), d.get("prev_trust"), now, mid)
+    for tid in d.get("topic_ids") or []:
+        db.ex("DELETE FROM memo_topics WHERE memo_id=? AND topic_id=?", mid, tid)
+        if tid in (d.get("created_topic_ids") or []) and not db.val("SELECT 1 FROM memo_topics WHERE topic_id=?", tid):
+            db.ex("DELETE FROM topics WHERE id=?", tid)
+        else:
+            mark_dirty(tid)
+    m = db.one("SELECT space_id FROM memos WHERE id=?", mid)
+    for t in d.get("prev_topics") or []:
+        # 주제가 비어 그 사이 정리됐으면 같은 제목으로 다시 만든다.
+        tid = t["id"] if db.val("SELECT 1 FROM topics WHERE id=?", t["id"]) else _ensure_topic(m["space_id"], t["title"], t.get("project_key"))[0]
+        _attach(mid, tid)
+
+
+def confirm_candidate(user, memo_id):
+    m = access.get_memo(user, memo_id, write=True)
+    if m["trust"] != "low":
+        raise BadRequest("세션에서 추출된 후보가 아닙니다.")
+    db.ex("UPDATE memos SET trust='high', updated_at=? WHERE id=?", db.now(), memo_id)
+    eid = db.insert("ingest_events", user_id=user["id"], space_id=m["space_id"], memo_id=memo_id, action="confirm", detail={}, created_at=db.now())
+    for tid in _topics_of(memo_id):
+        mark_dirty(tid)
+    return {"ok": True, "event_id": eid, "message": "정식 메모로 올렸습니다."}
+
+
+def dismiss_candidate(user, memo_id):
+    m = access.get_memo(user, memo_id, write=True)
+    if m["trust"] != "low":
+        raise BadRequest("세션에서 추출된 후보가 아닙니다.")
+    db.ex("UPDATE memos SET status='dismissed', updated_at=? WHERE id=?", db.now(), memo_id)
+    eid = db.insert("ingest_events", user_id=user["id"], space_id=m["space_id"], memo_id=memo_id, action="dismiss", detail={}, created_at=db.now())
+    for tid in _topics_of(memo_id):
+        mark_dirty(tid)
+    return {"ok": True, "event_id": eid, "message": "후보를 버렸습니다."}
+
+
+# ── 주제 문서 ───────────────────────────────────────────────────────
+def topic_memos(topic_id):
+    return db.q("SELECT m.*, u.name AS author_name FROM memos m JOIN memo_topics mt ON mt.memo_id=m.id JOIN users u ON u.id=m.author_id "
+                "WHERE mt.topic_id=? AND m.status IN ('active','superseded') ORDER BY m.status='active' DESC, m.created_at DESC", topic_id)
+
+
+def regenerate_topic(topic_id, user_id=None):
+    t = db.one("SELECT * FROM topics WHERE id=?", topic_id)
+    if not t:
+        return None
+    memos = topic_memos(topic_id)
+    if not any(m["status"] == "active" for m in memos):
+        if not memos:
+            db.ex("DELETE FROM topics WHERE id=?", topic_id)
+            return None
+    summary = None
+    t0 = time.time()
+    if llm.provider() != "heuristic" and memos:
+        lines = [f"주제: {t['title']}\n", "메모:"]
+        for m in memos[:60]:
+            flags = []
+            if m["status"] == "superseded":
+                flags.append("대체됨")
+            if m["trust"] == "low":
+                flags.append("세션 자동 추출")
+            flag = f" [{', '.join(flags)}]" if flags else ""
+            lines.append(f"- id {m['id']} ({time.strftime('%Y-%m-%d', time.localtime(m['created_at']))}){flag}: {m['body']}")
+        owner = user_id or db.val("SELECT owner_id FROM spaces WHERE id=?", t["space_id"])
+        out = llm.complete_json("topic_summary", llm.TOPIC_SYSTEM, "\n".join(lines), llm.TOPIC_SCHEMA, owner)
+        if out and out.get("summary"):
+            ids = {m["id"] for m in memos}
+            # 존재하지 않는 메모를 가리키는 근거 표시는 지운다.
+            summary = re.sub(r"\[m:(\d+)\]", lambda mm: mm.group(0) if int(mm.group(1)) in ids else "", out["summary"]).strip()
+    by = "llm" if summary else "rule"
+    if not summary:
+        summary = heuristic_topic_summary(memos)
+    db.ex("UPDATE topics SET summary=?, dirty=0, pipeline_version=?, updated_at=? WHERE id=?",
+          summary, config.PIPELINE_VERSION, db.now(), topic_id)
+    db.trace("topic_summary", f"{by}:t{topic_id}:{len(memos)}", ms=(time.time() - t0) * 1000)
+    return summary
+
+
+def merge_topics(user, keep_id, drop_id):
+    a, b = db.one("SELECT * FROM topics WHERE id=?", keep_id), db.one("SELECT * FROM topics WHERE id=?", drop_id)
+    if not a or not b or a["space_id"] != b["space_id"]:
+        raise BadRequest("같은 공간의 주제끼리만 합칠 수 있습니다.")
+    access.require_read(user, a["space_id"])
+    if db.val("SELECT kind FROM spaces WHERE id=?", a["space_id"]) == "team":
+        access.require_team_admin(user, a["space_id"])
+    db.ex("INSERT OR IGNORE INTO memo_topics(memo_id, topic_id) SELECT memo_id, ? FROM memo_topics WHERE topic_id=?", keep_id, drop_id)
+    db.ex("DELETE FROM memo_topics WHERE topic_id=?", drop_id)
+    db.ex("DELETE FROM topics WHERE id=?", drop_id)
+    mark_dirty(keep_id)
+    db.audit(user["id"], "topic_merge", "topic", keep_id, a["space_id"], dropped=drop_id)
+    return {"ok": True, "topic_id": keep_id}
+
+
+def topic_suggestions(space_id):
+    """주기적 정리 제안: 제목이 거의 같은 주제는 병합, 너무 커진 주제는 분할."""
+    ts = db.q("SELECT t.id, t.title, COUNT(mt.memo_id) AS n FROM topics t LEFT JOIN memo_topics mt ON mt.topic_id=t.id "
+              "WHERE t.space_id=? GROUP BY t.id", space_id)
+    vecs = {t["id"]: embed.embed(t["title"]) for t in ts}
+    out = []
+    for i, a in enumerate(ts):
+        for b in ts[i + 1:]:
+            s = embed.cosine(vecs[a["id"]], vecs[b["id"]])
+            if s >= 0.62:
+                keep, drop = (a, b) if a["n"] >= b["n"] else (b, a)
+                out.append({"type": "merge", "keep": keep, "drop": drop, "similarity": round(s, 2)})
+        if a["n"] >= 25:
+            out.append({"type": "split", "topic": a})
+    return out
+
+
+# ── 팀 공간으로 올리기 ──────────────────────────────────────────────
+def promote(user, memo_ids, team_space_id, ack=False, dry_run=False, note=None):
+    """개인 메모를 팀 공간으로 복사한다. 원본은 그대로 남는다(이동이 아니라 출처가 붙은 복사)."""
+    sp = db.one("SELECT * FROM spaces WHERE id=? AND kind='team'", team_space_id)
+    if not sp:
+        raise NotFound("팀 공간을 찾을 수 없습니다.")
+    access.require_read(user, team_space_id)
+    pid = access.personal_space_id(user["id"])
+    items, warnings, blocked = [], [], []
+    for mid in memo_ids:
+        m = db.one("SELECT * FROM memos WHERE id=?", mid)
+        if not m or m["space_id"] != pid:
+            raise Forbidden("내 공간의 메모만 팀으로 올릴 수 있습니다.")
+        if m["status"] != "active":
+            blocked.append({"memo_id": mid, "reason": "유효한 메모가 아닙니다(대체됨·삭제됨)."})
+            continue
+        if m["kind"] == "state":
+            blocked.append({"memo_id": mid, "reason": "진행 상태는 팀 지식으로 올리지 않습니다."})
+            continue
+        if m["trust"] == "low":
+            blocked.append({"memo_id": mid, "reason": "세션에서 자동 추출된 후보입니다. 먼저 내용을 확인해 정식 메모로 올리세요."})
+            continue
+        if db.val("SELECT 1 FROM memos WHERE space_id=? AND origin_memo_id=? AND status='active'", team_space_id, mid):
+            blocked.append({"memo_id": mid, "reason": "이미 이 팀에 올린 메모입니다."})
+            continue
+        acl = db.js(m["source_acl"], [])
+        if acl:
+            warnings.append({"memo_id": mid, "level": "ack", "text": f"접근 제한 문서({', '.join(acl)})에서 나온 내용이 들어 있습니다. 팀 전원이 봐도 되는지 확인하세요."})
+        if m["source"] == "session":
+            warnings.append({"memo_id": mid, "level": "info", "text": "세션에서 추출된 뒤 확인된 메모입니다. 세션에서 본 제한 문서의 내용이 섞이지 않았는지 살펴보세요."})
+        if m["masked_count"]:
+            warnings.append({"memo_id": mid, "level": "info", "text": f"민감 정보 {m['masked_count']}건이 마스킹된 메모입니다."})
+        items.append(m)
+    need_ack = any(w["level"] == "ack" for w in warnings)
+    preview = [{"memo_id": m["id"], "body": m["body"], "kind": m["kind"],
+                "topics": [r["title"] for r in db.q("SELECT t.title FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", m["id"])]}
+               for m in items]
+    if dry_run or (need_ack and not ack):
+        return {"dry_run": True, "team": sp["name"], "items": preview, "warnings": warnings, "blocked": blocked, "need_ack": need_ack}
+    created = []
+    for m in items:
+        src_topic = db.one("SELECT t.id, t.title FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=? LIMIT 1", m["id"])
+        res = remember(user, m["body"], space_id=team_space_id, scope=m["scope"], project_key=m["project_key"], kind=m["kind"],
+                       source="promoted", trust="high", origin_memo_id=m["id"], source_acl=m["source_acl"],
+                       topic_hint=src_topic["title"] if src_topic else None, origin_topic_id=src_topic["id"] if src_topic else None)
+        db.ex("UPDATE ingest_events SET action='promote' WHERE id=?", res["event_id"])
+        db.audit(user["id"], "promote", "memo", res["memo_id"], team_space_id, origin_memo_id=m["id"], acknowledged=bool(ack and need_ack), note=note)
+        created.append(res)
+    return {"dry_run": False, "team": sp["name"], "created": created, "warnings": warnings, "blocked": blocked,
+            "message": f"{sp['name']}에 {len(created)}건을 올렸습니다." + (f" {len(blocked)}건은 올리지 않았습니다." if blocked else "")}
+
+
+def import_text(user, text, project_key=None, source_name=None):
+    """기존 노트·CLAUDE.md·위키 문서를 가져온다. 문단·목록 항목 단위로 나눠 메모로 만든다."""
+    chunks, cur = [], []
+    for line in text.splitlines():
+        s = line.strip()
+        if re.match(r"^(#{1,6}\s|[-*+]\s|\d+[.)]\s)", s) or not s:
+            if cur:
+                chunks.append(" ".join(cur))
+                cur = []
+            s = re.sub(r"^([-*+]\s|\d+[.)]\s)", "", s)
+            if s and not s.startswith("#"):
+                cur = [s]
+        else:
+            cur.append(s)
+    if cur:
+        chunks.append(" ".join(cur))
+    chunks = [c for c in chunks if len(c) >= 8][:200]
+    results = [remember(user, c, project_key=project_key, source="import") for c in chunks]
+    db.audit(user["id"], "import", "space", access.personal_space_id(user["id"]), count=len(results), source=source_name)
+    return {"count": len(results), "results": results}

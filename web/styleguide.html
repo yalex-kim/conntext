@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스타일 가이드 · Conntext</title>
+<link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/assets/brand/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png">
+<link rel="preload" href="/assets/fonts/SUIT-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/base.css">
+<style>
+  .sg-top { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: var(--s-5); padding: 0 var(--s-5); height: 56px; }
+  .sg-top nav { display: flex; gap: var(--s-1); overflow-x: auto; scrollbar-width: none; margin-left: auto; }
+  .sg-top nav a { font-size: var(--fs-2); font-weight: 600; color: var(--on-ink-2); text-decoration: none; padding: 6px 10px; border-radius: var(--r-2); white-space: nowrap; }
+  .sg-top nav a:hover { color: var(--on-ink); background: var(--ink-hover); }
+  .sg-main { max-width: 1120px; margin: 0 auto; padding: var(--s-7) var(--s-5) var(--s-9); }
+  .sg-intro { max-width: var(--measure); margin-bottom: var(--s-8); }
+  .sg-intro h1 { margin-bottom: var(--s-4); }
+  .sg-intro p { color: var(--ink-2); }
+  .sg-sec { padding-top: var(--s-7); margin-top: var(--s-7); border-top: 1px solid var(--line); scroll-margin-top: 56px; }
+  .sg-sec > h2 { margin-bottom: var(--s-2); }
+  .sg-sec > p { color: var(--ink-2); max-width: var(--measure); margin-bottom: var(--s-5); }
+  .sg-h3 { font-size: var(--fs-3); font-weight: 700; color: var(--ink); margin: var(--s-6) 0 var(--s-3); }
+  .sg-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); }
+  .sg-row--end { align-items: flex-end; }
+  .sg-cap { display: block; font-family: var(--font-mono); font-size: var(--fs-1); color: var(--ink-2); margin-top: var(--s-2); }
+  .sg-grid { display: grid; gap: var(--s-5); grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+  .sg-box { padding: var(--s-5); }
+  .sg-box--ink { border-color: var(--ink); }
+  .sg-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: var(--s-2) var(--s-4); }
+  .sg-sw { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto auto; column-gap: var(--s-3); align-items: start; padding: var(--s-2) 0; }
+  .sg-sw__chip { grid-row: 1 / 4; width: 40px; height: 40px; border-radius: var(--r-2); box-shadow: inset 0 0 0 1px oklch(0.22 0.04 262 / 0.12); }
+  .sg-sw code { background: none; padding: 0; font-size: var(--fs-2); font-weight: 400; }
+  .sg-sw__v { font-size: var(--fs-1); color: var(--ink-2); line-height: 1.5; }
+  .sg-sw__u { font-size: var(--fs-2); color: var(--ink-2); line-height: 1.45; }
+  .sg-type { display: grid; gap: var(--s-4); }
+  .sg-type > div { display: grid; grid-template-columns: 150px 1fr; gap: var(--s-4); align-items: baseline; padding-bottom: var(--s-4); border-bottom: 1px solid var(--line); }
+  .sg-type .sg-cap { margin: 0; }
+  .sg-states { display: grid; grid-template-columns: 110px repeat(5, max-content); gap: var(--s-3) var(--s-4); align-items: center; overflow-x: auto; padding: 4px; }
+  .sg-states > .sg-cap { margin: 0; }
+  .sg-states .sg-head { font-size: var(--fs-1); color: var(--ink-2); font-weight: 600; }
+  .sg-forms { display: grid; gap: var(--s-5); grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); }
+  .sg-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+  .sg-icons li { display: grid; justify-items: center; gap: var(--s-2); padding: var(--s-4) var(--s-2) var(--s-3); background: var(--surface); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .sg-icons code { background: none; padding: 0; font-size: var(--fs-1); color: var(--ink-2); }
+  .sg-diagram svg { width: 100%; max-width: 560px; height: auto; }
+  .sg-pre { margin-top: var(--s-3); }
+  .sg-tagrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3); }
+  .sg-tagtable td:first-child { width: 1%; white-space: nowrap; }
+  @media (max-width: 640px) {
+    .sg-top { gap: var(--s-3); padding: 0 var(--s-4); }
+    .sg-top nav { display: none; }
+    .sg-main { padding: var(--s-6) var(--s-4) var(--s-8); }
+    .sg-type > div { grid-template-columns: 1fr; gap: var(--s-1); }
+  }
+</style>
+</head>
+<body>
+<header class="sg-top on-ink">
+  <a href="/" aria-label="Conntext 처음으로"><img class="wordmark" src="/assets/brand/wordmark-on-ink.svg" alt="conntext"></a>
+  <nav aria-label="스타일 가이드 목차">
+    <a href="#brand">브랜드</a><a href="#color">색</a><a href="#type">글자</a><a href="#button">버튼</a><a href="#form">입력</a><a href="#tag">태그</a><a href="#table">표</a><a href="#term">터미널</a><a href="#alert">알림</a><a href="#icon">아이콘</a><a href="#diagram">그림</a>
+  </nav>
+</header>
+
+<main class="sg-main">
+  <div class="sg-intro">
+    <h1>스타일 가이드</h1>
+    <p>소개 페이지, 매뉴얼, 앱이 함께 쓰는 브랜드 자산, 토큰, 부품입니다. 모든 페이지는 <code>/assets/base.css</code> 하나를 불러오고, 아이콘은 <code>/assets/icons.svg</code>에서 가져옵니다. 클래스와 토큰 목록은 base.css 맨 위 주석에 있습니다.</p>
+  </div>
+
+  <section class="sg-sec" id="brand" aria-labelledby="h-brand">
+    <h2 id="h-brand">브랜드</h2>
+    <p>노란 케이블 라벨에 <code>conn</code>을 적고, 라벨 밖에 서비스 이름을 둡니다. 글자는 글꼴이 아니라 SVG 경로입니다. 계단형 이중 아치는 심볼에만 씁니다.</p>
+
+    <h3 class="sg-h3">심볼 <code>mark.svg</code> · 파비콘 <code>favicon.svg</code></h3>
+    <div class="sg-row sg-row--end">
+      <figure><img src="/assets/brand/favicon.svg" width="16" height="16" alt="16px 파비콘"><figcaption class="sg-cap">16</figcaption></figure>
+      <figure><img src="/assets/brand/favicon.svg" width="32" height="32" alt="32px 파비콘"><figcaption class="sg-cap">32</figcaption></figure>
+      <figure><img src="/assets/brand/mark.svg" width="64" height="64" alt="64px 심볼"><figcaption class="sg-cap">64</figcaption></figure>
+      <figure><img src="/assets/brand/mark.svg" width="128" height="128" alt="128px 심볼"><figcaption class="sg-cap">128</figcaption></figure>
+      <figure><img src="/assets/brand/mark.svg" width="200" height="200" alt="200px 심볼"><figcaption class="sg-cap">200</figcaption></figure>
+    </div>
+
+    <h3 class="sg-h3">워드마크 <code>wordmark.svg</code></h3>
+    <div class="sg-row sg-row--end">
+      <figure><img src="/assets/brand/wordmark.svg" style="height:24px;width:auto" alt="conntext"><figcaption class="sg-cap">높이 24</figcaption></figure>
+      <figure><img src="/assets/brand/wordmark.svg" style="height:40px;width:auto" alt="conntext"><figcaption class="sg-cap">높이 40</figcaption></figure>
+      <figure><img src="/assets/brand/wordmark.svg" style="height:80px;width:auto" alt="conntext"><figcaption class="sg-cap">높이 80</figcaption></figure>
+    </div>
+
+    <div class="sg-grid" style="margin-top:var(--s-5)">
+      <div class="panel sg-box on-ink sg-box--ink">
+        <img src="/assets/brand/wordmark-on-ink.svg" style="height:40px;width:auto" alt="conntext">
+        <span class="sg-cap" style="color:var(--on-ink-2)">wordmark-on-ink.svg · 잉크 바탕 위</span>
+      </div>
+      <div class="panel sg-box">
+        <img src="/assets/brand/wordmark-connpass.svg" style="height:40px;width:auto" alt="connpass">
+        <span class="sg-cap">wordmark-connpass.svg · 자매 서비스, 같은 장치</span>
+      </div>
+    </div>
+
+    <h3 class="sg-h3">링크 미리보기 <code>og.png</code> 1200×630</h3>
+    <img src="/assets/brand/og.png" width="600" height="315" alt="링크 미리보기 이미지: conntext 워드마크와 '적어 둔 맥락이 다음 세션으로 이어집니다', 노란 라벨을 감은 케이블 사진" style="border-radius:var(--r-3);border:1px solid var(--line)">
+
+    <h3 class="sg-h3">머리말에 넣을 것</h3>
+    <div class="term"><div class="term__head"><span class="term__title">head</span></div>
+<pre>&lt;link rel="icon" href="/assets/brand/favicon.svg" type="image/svg+xml"&gt;
+&lt;link rel="icon" href="/assets/brand/favicon-32.png" sizes="32x32" type="image/png"&gt;
+&lt;link rel="apple-touch-icon" href="/assets/brand/apple-touch-icon.png"&gt;
+&lt;meta property="og:image" content="/assets/brand/og.png"&gt;
+&lt;link rel="stylesheet" href="/assets/base.css"&gt;</pre></div>
+  </section>
+
+  <section class="sg-sec" id="color" aria-labelledby="h-color">
+    <h2 id="h-color">색</h2>
+    <p>값은 OKLCH 토큰으로만 씁니다. 노랑 위 글자는 항상 <code>--ink</code>이고, 노랑 글자를 밝은 바탕에 쓰지 않습니다. 대비는 <code>--ground</code> 기준입니다.</p>
+    <h3 class="sg-h3">글자와 선</h3><ul class="sg-swatches"><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--ink)"></span><code>--ink</code><span class="sg-sw__v mono">oklch(0.22 0.04 262)</span><span class="sg-sw__u">본문 글자, 레일 바탕, 그림의 선</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--ink-2)"></span><code>--ink-2</code><span class="sg-sw__v mono">oklch(0.45 0.035 262)</span><span class="sg-sw__u">보조 글자. 바탕 위 6.9:1</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--ink-3)"></span><code>--ink-3</code><span class="sg-sw__v mono">oklch(0.62 0.03 262)</span><span class="sg-sw__u">비활성, 눈금. 3.4:1이라 본문 금지</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--line)"></span><code>--line</code><span class="sg-sw__v mono">oklch(0.88 0.012 262)</span><span class="sg-sw__u">구분선, 표 줄</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--line-strong)"></span><code>--line-strong</code><span class="sg-sw__v mono">oklch(0.66 0.025 262)</span><span class="sg-sw__u">입력·보조 버튼 테두리 (3:1)</span></li></ul><h3 class="sg-h3">바탕</h3><ul class="sg-swatches"><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--ground)"></span><code>--ground</code><span class="sg-sw__v mono">oklch(0.975 0.005 250)</span><span class="sg-sw__u">앱·문서 바탕</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--surface)"></span><code>--surface</code><span class="sg-sw__v mono">oklch(0.995 0.002 250)</span><span class="sg-sw__u">패널, 입력</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--sunken)"></span><code>--sunken</code><span class="sg-sw__v mono">oklch(0.952 0.008 255)</span><span class="sg-sw__u">표 머리, 인라인 코드, 눌린 면</span></li></ul><h3 class="sg-h3">라벨 노랑</h3><ul class="sg-swatches"><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--marker)"></span><code>--marker</code><span class="sg-sw__v mono">oklch(0.87 0.17 95)</span><span class="sg-sw__u">브랜드, 내 메모, 주 동작. 위 글자는 항상 <code>--ink</code></span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--marker-deep)"></span><code>--marker-deep</code><span class="sg-sw__v mono">oklch(0.78 0.16 88)</span><span class="sg-sw__u">노랑 위 눌림·테두리</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--marker-soft)"></span><code>--marker-soft</code><span class="sg-sw__v mono">oklch(0.96 0.06 95)</span><span class="sg-sw__u">선택된 행, 옅은 강조</span></li></ul><h3 class="sg-h3">등급과 상태</h3><ul class="sg-swatches"><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--team)"></span><code>--team</code><span class="sg-sw__v mono">oklch(0.50 0.17 258)</span><span class="sg-sw__u">팀 지식 채움 (흰 글자 6.1:1)</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--team-ink)"></span><code>--team-ink</code><span class="sg-sw__v mono">oklch(0.45 0.16 258)</span><span class="sg-sw__u">밝은 바탕 위 파랑 글자, 링크</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--team-soft)"></span><code>--team-soft</code><span class="sg-sw__v mono">oklch(0.95 0.03 258)</span><span class="sg-sw__u">정보 띠 바탕</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--state)"></span><code>--state</code><span class="sg-sw__v mono">oklch(0.60 0.14 158)</span><span class="sg-sw__u">진행 상태 채움 (잉크 글자 4.7:1)</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--state-ink)"></span><code>--state-ink</code><span class="sg-sw__v mono">oklch(0.45 0.11 158)</span><span class="sg-sw__u">밝은 바탕 위 초록 글자</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--state-soft)"></span><code>--state-soft</code><span class="sg-sw__v mono">oklch(0.95 0.035 158)</span><span class="sg-sw__u">진행 상태 옅은 면</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--warn)"></span><code>--warn</code><span class="sg-sw__v mono">oklch(0.72 0.15 62)</span><span class="sg-sw__u">주의 (채움·선에만)</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--warn-ink)"></span><code>--warn-ink</code><span class="sg-sw__v mono">oklch(0.50 0.12 58)</span><span class="sg-sw__u">주의 글자</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--warn-soft)"></span><code>--warn-soft</code><span class="sg-sw__v mono">oklch(0.96 0.045 70)</span><span class="sg-sw__u">주의 띠 바탕</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--danger)"></span><code>--danger</code><span class="sg-sw__v mono">oklch(0.55 0.20 27)</span><span class="sg-sw__u">위험 버튼 채움</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--danger-ink)"></span><code>--danger-ink</code><span class="sg-sw__v mono">oklch(0.50 0.19 27)</span><span class="sg-sw__u">오류 글자</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--danger-soft)"></span><code>--danger-soft</code><span class="sg-sw__v mono">oklch(0.955 0.025 27)</span><span class="sg-sw__u">위험 띠 바탕</span></li></ul><h3 class="sg-h3">잉크 바탕 위</h3><ul class="sg-swatches"><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--on-ink)"></span><code>--on-ink</code><span class="sg-sw__v mono">oklch(0.975 0.005 250)</span><span class="sg-sw__u">잉크 위 글자 16:1</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--on-ink-2)"></span><code>--on-ink-2</code><span class="sg-sw__v mono">oklch(0.78 0.025 262)</span><span class="sg-sw__u">잉크 위 보조 글자 8.7:1</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--ink-hover)"></span><code>--ink-hover</code><span class="sg-sw__v mono">oklch(0.29 0.04 262)</span><span class="sg-sw__u">레일 항목 가리킴</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--ink-line)"></span><code>--ink-line</code><span class="sg-sw__v mono">oklch(0.36 0.035 262)</span><span class="sg-sw__u">잉크 위 구분선</span></li></ul><h3 class="sg-h3">터미널</h3><ul class="sg-swatches"><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--term-bg)"></span><code>--term-bg</code><span class="sg-sw__v mono">= ink</span><span class="sg-sw__u">터미널 바탕</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--term-dim)"></span><code>--term-dim</code><span class="sg-sw__v mono">oklch(0.68 0.03 262)</span><span class="sg-sw__u">주석·제목 6.0:1</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--term-prompt)"></span><code>--term-prompt</code><span class="sg-sw__v mono">= marker</span><span class="sg-sw__u">프롬프트 $</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--term-ok)"></span><code>--term-ok</code><span class="sg-sw__v mono">oklch(0.80 0.13 158)</span><span class="sg-sw__u">성공 출력</span></li><li class="sg-sw"><span class="sg-sw__chip" style="background:var(--term-err)"></span><code>--term-err</code><span class="sg-sw__v mono">oklch(0.75 0.14 27)</span><span class="sg-sw__u">오류 출력</span></li></ul>
+  </section>
+
+  <section class="sg-sec" id="type" aria-labelledby="h-type">
+    <h2 id="h-type">글자</h2>
+    <p>제목은 Paperlogy, UI와 본문은 SUIT, 명령어·id·수치는 D2Coding입니다. D2Coding을 장식으로 쓰지 않습니다.</p>
+    <div class="sg-type">
+      <div><span class="sg-cap">--fs-9 · Paperlogy 800</span><p style="font:800 var(--fs-9)/1.1 var(--font-display);letter-spacing:-0.03em">적어 둔 맥락</p></div>
+      <div><span class="sg-cap">h1 · --fs-8 · Paperlogy 800</span><h1 style="font-size:var(--fs-8)">다음 세션으로 이어집니다</h1></div>
+      <div><span class="sg-cap">h2 · --fs-7 · Paperlogy 700</span><h2>메모가 처리되는 과정</h2></div>
+      <div><span class="sg-cap">h3 · --fs-6 · SUIT 700</span><h3>등급과 주입</h3></div>
+      <div><span class="sg-cap">h4 · --fs-5 · SUIT 700</span><h4>팀으로 공유하기</h4></div>
+      <div><span class="sg-cap">본문 · --fs-4 · 1.7</span><p style="max-width:var(--measure)">한 번 적어 둔 메모는 원문 그대로 보존됩니다. 사용자가 승인한 것만 에이전트의 기본 동작을 바꾸고, 자동으로 추출된 후보는 확인하기 전까지 참고로만 들어갑니다.</p></div>
+      <div><span class="sg-cap">UI · --fs-3 · 1.45</span><p style="font-size:var(--fs-3);line-height:var(--lh-ui)">최근 저장 내역 12건 · 마지막 동기화 3분 전</p></div>
+      <div><span class="sg-cap">보조 · --fs-2 · --ink-2</span><p class="muted" style="font-size:var(--fs-2);line-height:var(--lh-ui)">이 메모는 fw-gateway 저장소에서 적었습니다.</p></div>
+      <div><span class="sg-cap">캡션 · --fs-1</span><p class="muted" style="font-size:var(--fs-1);line-height:var(--lh-ui)">2026-11-12 09:41 저장</p></div>
+      <div><span class="sg-cap">코드 · D2Coding</span><p style="font-size:var(--fs-3)"><code>/conntext:remember</code> 로 저장하고 <code>m:142</code> 로 가리킵니다. <kbd>Ctrl</kbd> + <kbd>K</kbd></p></div>
+      <div><span class="sg-cap">링크</span><p style="font-size:var(--fs-3)"><a href="#tag">등급 라벨 태그</a>를 참고하십시오. 선택한 글자는 <span style="background:var(--marker)">라벨 노랑</span>으로 칠해집니다.</p></div>
+    </div>
+  </section>
+
+  <section class="sg-sec" id="button" aria-labelledby="h-button">
+    <h2 id="h-button">버튼</h2>
+    <p>주 동작은 화면마다 하나, 노란 채움에 잉크 글자입니다. 버튼 글은 하는 일을 말합니다. 아래 표의 가리킴·누름·포커스 칸은 상태를 고정해 그린 것입니다.</p>
+    <div class="sg-states">
+      <span></span><span class="sg-head">기본</span><span class="sg-head">가리킴</span><span class="sg-head">누름</span><span class="sg-head">포커스</span><span class="sg-head">비활성 · 로딩</span>
+      <span class="sg-cap">.btn--primary</span>
+      <button class="btn btn--primary">저장</button>
+      <button class="btn btn--primary" style="--btn-bg:var(--btn-bg-hover)" tabindex="-1">저장</button>
+      <button class="btn btn--primary" style="--btn-bg:var(--btn-bg-active)" tabindex="-1">저장</button>
+      <button class="btn btn--primary" style="outline:2px solid var(--focus);outline-offset:2px" tabindex="-1">저장</button>
+      <span class="sg-row"><button class="btn btn--primary" disabled>저장</button><button class="btn btn--primary" aria-busy="true" tabindex="-1"><span>저장</span></button></span>
+      <span class="sg-cap">.btn (.btn--secondary)</span>
+      <button class="btn">되돌리기</button>
+      <button class="btn" style="--btn-bg:var(--btn-bg-hover)" tabindex="-1">되돌리기</button>
+      <button class="btn" style="--btn-bg:var(--btn-bg-active)" tabindex="-1">되돌리기</button>
+      <button class="btn" style="outline:2px solid var(--focus);outline-offset:2px" tabindex="-1">되돌리기</button>
+      <span class="sg-row"><button class="btn" disabled>되돌리기</button><button class="btn" aria-busy="true" tabindex="-1"><span>되돌리기</span></button></span>
+      <span class="sg-cap">.btn--quiet</span>
+      <button class="btn btn--quiet">취소</button>
+      <button class="btn btn--quiet" style="--btn-bg:var(--btn-bg-hover);--btn-fg:var(--ink)" tabindex="-1">취소</button>
+      <button class="btn btn--quiet" style="--btn-bg:var(--btn-bg-active);--btn-fg:var(--ink)" tabindex="-1">취소</button>
+      <button class="btn btn--quiet" style="outline:2px solid var(--focus);outline-offset:2px" tabindex="-1">취소</button>
+      <span class="sg-row"><button class="btn btn--quiet" disabled>취소</button><button class="btn btn--quiet" aria-busy="true" tabindex="-1"><span>취소</span></button></span>
+      <span class="sg-cap">.btn--danger</span>
+      <button class="btn btn--danger">삭제</button>
+      <button class="btn btn--danger" style="--btn-bg:var(--btn-bg-hover)" tabindex="-1">삭제</button>
+      <button class="btn btn--danger" style="--btn-bg:var(--btn-bg-active)" tabindex="-1">삭제</button>
+      <button class="btn btn--danger" style="outline:2px solid var(--focus);outline-offset:2px" tabindex="-1">삭제</button>
+      <span class="sg-row"><button class="btn btn--danger" disabled>삭제</button><button class="btn btn--danger" aria-busy="true" tabindex="-1"><span>삭제</span></button></span>
+    </div>
+
+    <h3 class="sg-h3">크기와 아이콘</h3>
+    <div class="sg-row">
+      <button class="btn btn--primary btn--lg"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#arrow-right"/></svg><span>웹 열기</span></button>
+      <button class="btn btn--primary"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#share"/></svg><span>팀으로 공유</span></button>
+      <button class="btn btn--sm"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#copy"/></svg><span>복사</span></button>
+      <button class="btn btn--icon" aria-label="편집"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#edit"/></svg></button>
+      <button class="btn btn--quiet btn--icon" aria-label="삭제"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#trash"/></svg></button>
+      <button class="btn btn--quiet btn--icon btn--sm" aria-label="닫기"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#x"/></svg></button>
+    </div>
+    <h3 class="sg-h3">잉크 바탕 위 <code>.on-ink</code></h3>
+    <div class="panel sg-box on-ink sg-row">
+      <button class="btn btn--primary">메모 저장</button>
+      <button class="btn btn--secondary">설정</button>
+      <button class="btn btn--quiet"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#home"/></svg><span>홈</span></button>
+      <button class="btn btn--quiet btn--icon" aria-label="검색"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#search"/></svg></button>
+      <span class="chip">팀 공간</span>
+    </div>
+  </section>
+
+  <section class="sg-sec" id="form" aria-labelledby="h-form">
+    <h2 id="h-form">입력</h2>
+    <p>라벨은 입력 위에, 도움말과 오류는 아래에 둡니다. 오류는 무엇이 문제이고 어떻게 풀지 말합니다.</p>
+    <div class="sg-forms">
+      <div class="field">
+        <label class="field__label" for="f1">메모</label>
+        <input class="input" id="f1" placeholder="한 줄로 적어 두십시오">
+        <p class="field__hint">에이전트가 다음 세션에서 이 내용을 받습니다.</p>
+      </div>
+      <div class="field">
+        <label class="field__label" for="f2">저장소 (포커스)</label>
+        <input class="input input--mono" id="f2" value="fw-gateway" style="border-color:var(--focus);box-shadow:0 0 0 3px oklch(0.50 0.17 258 / 0.18)">
+      </div>
+      <div class="field">
+        <label class="field__label" for="f3">팀 이름</label>
+        <input class="input" id="f3" value="conn/" aria-invalid="true" aria-describedby="f3e">
+        <p class="field__error" id="f3e"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#alert"/></svg><span>팀 이름에는 /를 쓸 수 없습니다. 영문, 숫자, -만 써 주십시오.</span></p>
+      </div>
+      <div class="field">
+        <label class="field__label" for="f4">토큰 (비활성)</label>
+        <input class="input input--mono" id="f4" value="ctx_••••••••3f2a" disabled>
+      </div>
+      <div class="field">
+        <label class="field__label" for="f5">범위</label>
+        <select class="select" id="f5"><option>내 공간</option><option>팀 공간</option></select>
+      </div>
+      <div class="field">
+        <label class="field__label" for="f6">주제 문서 본문</label>
+        <textarea class="textarea" id="f6" rows="3">BLE 재연결은 30초 백오프 뒤 세 번까지 시도합니다.</textarea>
+      </div>
+      <fieldset class="field" style="border:0;padding:0;margin:0">
+        <legend class="field__label" style="margin-bottom:6px">주입 범위</legend>
+        <label class="check"><input type="checkbox" checked> 내 메모</label>
+        <label class="check"><input type="checkbox" checked> 팀 지식</label>
+        <label class="check"><input type="checkbox"> 후보</label>
+      </fieldset>
+      <fieldset class="field" style="border:0;padding:0;margin:0">
+        <legend class="field__label" style="margin-bottom:6px">세션 기록</legend>
+        <label class="switch"><input type="checkbox" role="switch" checked> 이 저장소에서 기록</label>
+        <label class="switch"><input type="checkbox" role="switch"> 자동 추출 후보 만들기</label>
+        <label class="switch"><input type="checkbox" role="switch" disabled> 운영자 열람 허용 (비활성)</label>
+      </fieldset>
+    </div>
+  </section>
+
+  <section class="sg-sec" id="tag" aria-labelledby="h-tag">
+    <h2 id="h-tag">등급 라벨 태그와 표식</h2>
+    <p>메모 id는 와이어 마커처럼 생긴 태그로 씁니다. 등급은 색과 형태 둘 다로 구분합니다. 오른쪽 끝의 V자 노치가 상자와 구분해 줍니다.</p>
+    <div class="table-wrap">
+      <table class="table sg-tagtable">
+        <thead><tr><th>태그</th><th>등급</th><th>형태</th><th>마크업</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag tag--mine">m:142</span></td><td>내 메모 <code>mine</code></td><td>노란 채움, 잉크 글자</td><td><code>.tag.tag--mine</code></td></tr>
+          <tr><td><span class="tag tag--team">t:31</span><span class="tag-by">김지민</span></td><td>팀 지식 <code>team</code></td><td>파란 채움, 흰 글자, 곁에 작성자</td><td><code>.tag.tag--team</code> + <code>.tag-by</code></td></tr>
+          <tr><td><span class="tag tag--candidate">c:907</span></td><td>후보 <code>candidate</code></td><td>흰 바탕, 잉크 점선 테두리</td><td><code>.tag.tag--candidate</code></td></tr>
+          <tr><td><span class="tag tag--state">s:58</span></td><td>진행 상태 <code>state</code></td><td>초록 채움, 잉크 글자</td><td><code>.tag.tag--state</code></td></tr>
+          <tr><td><span class="tag tag--superseded">m:97</span></td><td>대체됨 <code>superseded</code></td><td>회색, 취소선</td><td><code>.tag.tag--superseded</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3 class="sg-h3">큰 태그 <code>.tag--lg</code> (소개 페이지의 메시지)</h3>
+    <div class="sg-tagrow">
+      <span class="tag tag--mine tag--lg">/remember</span>
+      <span class="tag tag--state tag--lg">s:58</span>
+      <span class="tag tag--team tag--lg">t:31</span>
+      <span class="tag tag--candidate tag--lg">c:907</span>
+      <span class="tag tag--superseded tag--lg">m:97</span>
+    </div>
+    <h3 class="sg-h3">문장 속에서</h3>
+    <p style="max-width:var(--measure);font-size:var(--fs-3)"><span class="tag tag--mine">m:142</span>가 <span class="tag tag--superseded">m:97</span>을 대체했습니다. 되돌리면 <span class="tag tag--superseded">m:97</span>이 다시 주입됩니다.</p>
+    <h3 class="sg-h3">종류·범위 표식 <code>.chip</code></h3>
+    <div class="sg-tagrow">
+      <span class="chip">메모</span><span class="chip">주제 문서</span><span class="chip">결정</span>
+      <span class="chip chip--scope"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#user"/></svg>내 공간</span><span class="chip chip--scope"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#team"/></svg>팀 공간</span>
+      <span class="chip chip--mono">fw-gateway</span><span class="chip chip--mono">ota-agent</span>
+    </div>
+  </section>
+
+  <section class="sg-sec" id="table" aria-labelledby="h-table">
+    <h2 id="h-table">표, 탭, 패널</h2>
+    <p>숫자 칸은 <code>.num</code>으로 오른쪽 정렬하고 자리를 맞춥니다. 좁은 화면에서는 <code>.table-wrap</code>이 가로로 넘깁니다.</p>
+    <nav class="tabs" aria-label="예시 탭"><a href="#table" aria-current="page">최근 저장</a><a href="#table">주입 기록</a><a href="#table">대체됨</a></nav>
+    <div class="table-wrap" style="margin-top:var(--s-4)">
+      <table class="table">
+        <thead><tr><th>id</th><th>내용 (예시)</th><th>범위</th><th>저장소</th><th class="num">주입</th><th class="num">토큰</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag tag--mine">m:142</span></td><td>BLE 재연결은 30초 백오프 뒤 세 번까지 시도</td><td><span class="chip chip--scope">내 공간</span></td><td><span class="chip chip--mono">fw-gateway</span></td><td class="num">18</td><td class="num">42</td></tr>
+          <tr aria-selected="true"><td><span class="tag tag--team">t:31</span></td><td>OTA 이미지 서명 키는 운영 볼트에서만 꺼냄</td><td><span class="chip chip--scope">팀 공간</span></td><td><span class="chip chip--mono">ota-agent</span></td><td class="num">204</td><td class="num">1,180</td></tr>
+          <tr><td><span class="tag tag--candidate">c:907</span></td><td>게이트웨이 로그 회전 주기를 6시간으로 줄임</td><td><span class="chip chip--scope">내 공간</span></td><td><span class="chip chip--mono">fw-gateway</span></td><td class="num">0</td><td class="num">37</td></tr>
+          <tr><td><span class="tag tag--superseded">m:97</span></td><td>BLE 재연결은 10초 간격으로 무한 시도</td><td><span class="chip chip--scope">내 공간</span></td><td><span class="chip chip--mono">fw-gateway</span></td><td class="num">7</td><td class="num">29</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel sg-box" style="margin-top:var(--s-5)">
+      <h3 style="font-size:var(--fs-4);margin-bottom:var(--s-2)">.panel</h3>
+      <p class="muted" style="font-size:var(--fs-3)">흰 면, 가는 선, 반경 10. 패널 안에 패널을 넣지 않습니다.</p>
+    </div>
+  </section>
+
+  <section class="sg-sec" id="term" aria-labelledby="h-term">
+    <h2 id="h-term">터미널 블록</h2>
+    <p>명령어는 터미널처럼 어두운 면에 씁니다. 프롬프트 기호는 복사되지 않습니다.</p>
+    <div class="term">
+      <div class="term__head"><span class="term__title">Claude Code · 예시</span><button class="btn btn--quiet btn--sm"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#copy"/></svg><span>복사</span></button></div>
+<pre><span class="term__dim"># 플러그인 설치</span>
+<span class="term__prompt">&gt; </span>/plugin install conntext@conntext
+<span class="term__ok">conntext 0.1.0을 설치했습니다</span>
+<span class="term__prompt">&gt; </span>/conntext:remember BLE 재연결은 30초 백오프 뒤 세 번까지
+<span class="term__out">저장했습니다  m:142</span>
+<span class="term__err">서버에 연결하지 못했습니다. CONNTEXT_URL 설정을 확인하십시오.</span></pre>
+    </div>
+  </section>
+
+  <section class="sg-sec" id="alert" aria-labelledby="h-alert">
+    <h2 id="h-alert">알림 띠와 빈 상태</h2>
+    <p>알림 띠는 바탕과 가는 테두리, 아이콘으로 구분합니다. 굵은 옆줄을 쓰지 않습니다.</p>
+    <div style="display:grid;gap:var(--s-3)">
+      <div class="alert" role="status"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#info"/></svg><div><p class="alert__title">후보 3건이 확인을 기다립니다</p><p>확인하기 전까지 에이전트에는 참고로만 들어갑니다.</p></div><button class="btn btn--sm">확인하기</button></div>
+      <div class="alert alert--warn" role="status"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#alert"/></svg><div><p class="alert__title">주입 예산의 90%를 쓰고 있습니다</p><p>오래된 진행 상태를 정리하면 새 메모가 들어갈 자리가 생깁니다.</p></div></div>
+      <div class="alert alert--danger" role="alert"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#alert"/></svg><div><p class="alert__title">저장하지 못했습니다</p><p>로그인이 만료되었습니다. 다시 로그인한 뒤 저장을 누르십시오.</p></div><button class="btn btn--sm">다시 로그인</button></div>
+    </div>
+    <div class="panel" style="margin-top:var(--s-5)">
+      <div class="empty">
+        <svg class="icon empty__icon" aria-hidden="true"><use href="/assets/icons.svg#memo"/></svg>
+        <p class="empty__title">아직 적어 둔 메모가 없습니다</p>
+        <p>터미널에서 <code>/conntext:remember</code> 뒤에 한 줄을 적거나, 여기서 바로 적을 수 있습니다.</p>
+        <button class="btn btn--primary"><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#plus"/></svg><span>메모 적기</span></button>
+      </div>
+    </div>
+    <h3 class="sg-h3">로딩</h3>
+    <p class="sg-row muted" style="font-size:var(--fs-3)"><span class="spinner" aria-hidden="true"></span> 불러오는 중입니다</p>
+  </section>
+
+  <section class="sg-sec" id="icon" aria-labelledby="h-icon">
+    <h2 id="h-icon">아이콘</h2>
+    <p>34개. 24 격자, 선 1.75, 둥근 끝, <code>currentColor</code>. 기본 20px, <code>.icon--sm</code> 16px, <code>.icon--lg</code> 24px. 글자 없이 아이콘만 있는 버튼에는 <code>aria-label</code>을 붙입니다.</p>
+    <ul class="sg-icons"><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#home"/></svg><code>home</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#wiki"/></svg><code>wiki</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#memo"/></svg><code>memo</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#agent"/></svg><code>agent</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#session"/></svg><code>session</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#team"/></svg><code>team</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#settings"/></svg><code>settings</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#admin"/></svg><code>admin</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#search"/></svg><code>search</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#plus"/></svg><code>plus</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#check"/></svg><code>check</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#x"/></svg><code>x</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#undo"/></svg><code>undo</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#edit"/></svg><code>edit</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#trash"/></svg><code>trash</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#copy"/></svg><code>copy</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#external"/></svg><code>external</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#share"/></svg><code>share</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#pause"/></svg><code>pause</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#play"/></svg><code>play</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#shield"/></svg><code>shield</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#alert"/></svg><code>alert</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#info"/></svg><code>info</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#chevron-down"/></svg><code>chevron-down</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#chevron-right"/></svg><code>chevron-right</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#arrow-right"/></svg><code>arrow-right</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#link"/></svg><code>link</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#clock"/></svg><code>clock</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#filter"/></svg><code>filter</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#download"/></svg><code>download</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#upload"/></svg><code>upload</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#user"/></svg><code>user</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#key"/></svg><code>key</code></li><li><svg class="icon icon--lg" aria-hidden="true"><use href="/assets/icons.svg#refresh"/></svg><code>refresh</code></li></ul>
+    <div class="term sg-pre"><pre>&lt;svg class="icon" aria-hidden="true"&gt;&lt;use href="/assets/icons.svg#home"/&gt;&lt;/svg&gt;</pre></div>
+  </section>
+
+  <section class="sg-sec sg-diagram" id="diagram" aria-labelledby="h-diagram">
+    <h2 id="h-diagram">그림 토큰</h2>
+    <p>메시지 시퀀스 차트와 프레임 포맷 그림은 각 표면에서 그립니다. 선과 눈금 색은 아래 토큰을 씁니다: <code>--dg-line</code> 생명선·화살표, <code>--dg-line-2</code> 보조선, <code>--dg-tick</code> 눈금, <code>--dg-tick-label</code> 눈금 글자, <code>--dg-grid</code> 격자, <code>--dg-field</code>·<code>--dg-field-alt</code> 필드 칸, 굵기 <code>--dg-hair</code> 1px · <code>--dg-stroke</code> 1.5px.</p>
+    <svg viewBox="0 0 560 120" role="img" aria-label="그림 토큰 예시: 눈금이 있는 프레임 포맷 막대">
+      <g style="stroke:var(--dg-tick);stroke-width:var(--dg-hair)">
+        <path d="M20 30v-8M80 30v-4M140 30v-8M200 30v-4M260 30v-8M320 30v-4M380 30v-8M440 30v-4M500 30v-8M540 30v-8"/>
+      </g>
+      <g style="fill:var(--dg-tick-label);font:12px var(--font-mono)">
+        <text x="20" y="16" text-anchor="middle">0</text><text x="140" y="16" text-anchor="middle">512</text><text x="260" y="16" text-anchor="middle">1024</text><text x="380" y="16" text-anchor="middle">1536</text><text x="500" y="16" text-anchor="middle">2048</text>
+      </g>
+      <g style="stroke:var(--dg-line);stroke-width:var(--dg-stroke)">
+        <rect x="20" y="36" width="170" height="40" style="fill:var(--marker)"/>
+        <rect x="190" y="36" width="130" height="40" style="fill:var(--dg-field)"/>
+        <rect x="320" y="36" width="90" height="40" style="fill:var(--dg-field-alt)"/>
+        <rect x="410" y="36" width="130" height="40" style="fill:var(--dg-field);stroke-dasharray:4 3"/>
+      </g>
+      <g style="fill:var(--ink);font:600 13px var(--font-ui)">
+        <text x="32" y="61">내 메모</text><text x="202" y="61">팀 지식</text><text x="332" y="61">진행 상태</text><text x="422" y="61" style="fill:var(--ink-2)">남은 예산</text>
+      </g>
+      <path d="M20 100H540" style="stroke:var(--dg-grid);stroke-width:var(--dg-hair)"/>
+    </svg>
+  </section>
+</main>
+</body>
+</html>

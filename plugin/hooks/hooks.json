@@ -1,0 +1,14 @@
+{
+  "description": "Conntext: 세션 시작 때 맥락을 넣고, 세션이 끝나면 대화록을 서버로 보낸다",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/conntext.py\" hook session-start", "timeout": 10 } ] }
+    ],
+    "PreCompact": [
+      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/conntext.py\" hook pre-compact", "timeout": 10 } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/conntext.py\" hook session-end", "timeout": 10 } ] }
+    ]
+  }
+}
