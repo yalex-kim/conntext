@@ -43,7 +43,11 @@ def search(space_ids, query, project_key=None, limit=8, statuses=("active",), ex
     fq = _fts_query(query)
     if fq:
         try:
-            for i, r in enumerate(db.q("SELECT rowid FROM memos_fts WHERE memos_fts MATCH ? ORDER BY bm25(memos_fts) LIMIT 40", fq)):
+            # 키워드 후보도 검색 대상 공간·상태 안에서만 뽑는다. 서버 전체를 놓고 상위 40건을 뽑으면
+            # 볼 수 없는 메모가 자리를 차지해 내 메모의 가점이 사라진다. 유사도 점수와 같은 기준을 쓴다.
+            for i, r in enumerate(db.q("SELECT f.rowid FROM memos_fts f JOIN memos m ON m.id=f.rowid "
+                                       f"WHERE memos_fts MATCH ? AND m.space_id IN ({marks}) AND m.status IN ({smarks}) "
+                                       f"ORDER BY bm25(memos_fts) LIMIT 40", fq, *space_ids, *statuses)):
                 fts_rank[r["rowid"]] = i
         except Exception:
             pass
