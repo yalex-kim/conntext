@@ -419,6 +419,32 @@ class TestScopeAndInjection(Base):
         self.assertIn("두 번째", retrieval.resume(self.alice, GW)["state"]["body"])
 
 
+class TestSearchScope(Base):
+    """키워드(FTS) 가점은 검색 대상 공간 안에서 계산한다(이슈 #1)."""
+
+    def hit_of(self, user, mid, query="watchdog 타이머"):
+        hits = [h for h in retrieval.search(access.space_ids(user["id"]), query) if h["id"] == mid]
+        self.assertEqual(len(hits), 1)
+        return hits[0]
+
+    def test_keyword_boost_ignores_memos_in_other_spaces(self):
+        # 밥의 개인 공간 메모가 FTS 상위 40건을 다 차지해도, 앨리스의 메모는 키워드 가점을 받아야 한다.
+        for i in range(45):
+            pipeline.remember(self.bob, f"watchdog 타이머 설정 메모 {i} watchdog watchdog", do_analyze=False)
+        mid = pipeline.remember(self.alice, "게이트웨이 재부팅 원인은 watchdog 타이머 만료였다", do_analyze=False)["memo_id"]
+        hit = self.hit_of(self.alice, mid)
+        self.assertAlmostEqual(hit["score"], round(0.7 * hit["cos"] + 0.3, 4), places=3)
+
+    def test_keyword_boost_ignores_deleted_memos(self):
+        # 삭제된 메모가 40건 자리를 차지해도 살아있는 메모는 키워드 가점을 받아야 한다.
+        dead = [pipeline.remember(self.alice, f"watchdog 타이머 정리 기록 {i} watchdog watchdog", do_analyze=False)["memo_id"]
+                for i in range(45)]
+        db.ex(f"UPDATE memos SET status='deleted' WHERE id IN ({','.join('?' * len(dead))})", *dead)
+        mid = pipeline.remember(self.alice, "게이트웨이 재부팅 원인은 watchdog 타이머 만료였다", do_analyze=False)["memo_id"]
+        hit = self.hit_of(self.alice, mid)
+        self.assertAlmostEqual(hit["score"], round(0.7 * hit["cos"] + 0.3, 4), places=3)
+
+
 class TestSessions(Base):
     JSONL = "\n".join(json.dumps(x, ensure_ascii=False) for x in [
         {"type": "user", "message": {"role": "user", "content": "토큰 갱신 테스트 실패 원인 찾아줘"}},
