@@ -445,6 +445,26 @@ class TestSearchScope(Base):
         self.assertAlmostEqual(hit["score"], round(0.7 * hit["cos"] + 0.3, 4), places=3)
 
 
+    def test_keyword_boost_ignores_other_kinds_when_filtered(self):
+        # 종류를 골라 찾을 때(/resume의 관련 메모, 관계 판정 후보), 다른 종류의 메모가 40건 자리를 차지해도
+        # 고른 종류의 메모는 키워드 가점을 받아야 한다.
+        for i in range(45):
+            pipeline.remember(self.alice, f"watchdog 타이머 확인 중 {i} watchdog watchdog", kind="state", do_analyze=False)
+        mid = pipeline.remember(self.alice, "게이트웨이 재부팅 원인은 watchdog 타이머 만료였다", kind="knowledge", do_analyze=False)["memo_id"]
+        hits = [h for h in retrieval.search(access.space_ids(self.alice["id"]), "watchdog 타이머", kinds=("knowledge", "instruction"))
+                if h["id"] == mid]
+        self.assertEqual(len(hits), 1)
+        self.assertAlmostEqual(hits[0]["score"], round(0.7 * hits[0]["cos"] + 0.3, 4), places=3)
+
+    def test_broken_fts_query_is_recorded(self):
+        # 키워드 질의가 실패해도 검색은 계속되고, 실패는 추적 기록에 남는다.
+        mid = pipeline.remember(self.alice, "게이트웨이 재부팅 원인은 watchdog 타이머 만료였다", do_analyze=False)["memo_id"]
+        db.ex("DROP TABLE memos_fts")
+        hits = retrieval.search(access.space_ids(self.alice["id"]), "watchdog 타이머")
+        self.assertEqual([h["id"] for h in hits], [mid])
+        self.assertTrue(db.q("SELECT 1 FROM trace WHERE stage='fts_error'"))
+
+
 class TestSessions(Base):
     JSONL = "\n".join(json.dumps(x, ensure_ascii=False) for x in [
         {"type": "user", "message": {"role": "user", "content": "토큰 갱신 테스트 실패 원인 찾아줘"}},
