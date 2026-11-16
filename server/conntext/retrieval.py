@@ -42,15 +42,23 @@ def search(space_ids, query, project_key=None, limit=8, statuses=("active",), ex
     fts_rank = {}
     fq = _fts_query(query)
     if fq:
+        # 키워드 후보도 아래에서 점수를 매길 메모와 같은 조건(공간·상태·종류·제외 id) 안에서만 뽑는다.
+        # 서버 전체를 놓고 상위 40건을 뽑으면, 점수를 받지 못할 메모가 자리를 차지해 내 메모의 가점이 사라진다.
+        where, args = [f"m.space_id IN ({marks})", f"m.status IN ({smarks})"], [*space_ids, *statuses]
+        if kinds:
+            where.append(f"m.kind IN ({','.join('?' * len(kinds))})")
+            args += list(kinds)
+        if exclude_ids:
+            where.append(f"m.id NOT IN ({','.join('?' * len(exclude_ids))})")
+            args += list(exclude_ids)
         try:
-            # 키워드 후보도 검색 대상 공간·상태 안에서만 뽑는다. 서버 전체를 놓고 상위 40건을 뽑으면
-            # 볼 수 없는 메모가 자리를 차지해 내 메모의 가점이 사라진다. 유사도 점수와 같은 기준을 쓴다.
             for i, r in enumerate(db.q("SELECT f.rowid FROM memos_fts f JOIN memos m ON m.id=f.rowid "
-                                       f"WHERE memos_fts MATCH ? AND m.space_id IN ({marks}) AND m.status IN ({smarks}) "
-                                       f"ORDER BY bm25(memos_fts) LIMIT 40", fq, *space_ids, *statuses)):
+                                       f"WHERE memos_fts MATCH ? AND {' AND '.join(where)} "
+                                       "ORDER BY bm25(memos_fts) LIMIT 40", fq, *args)):
                 fts_rank[r["rowid"]] = i
-        except Exception:
-            pass
+        except Exception as e:
+            # 질의가 깨져도 검색은 유사도만으로 계속한다. 다만 조용히 품질이 떨어지지 않게 기록을 남긴다.
+            db.trace("fts_error", f"{type(e).__name__}: {e}")
     out = []
     for m in rows:
         if m["id"] in exclude_ids or (kinds and m["kind"] not in kinds):
