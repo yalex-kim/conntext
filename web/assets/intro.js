@@ -28,6 +28,8 @@ const C = { ink: "#101a2d", yellow: "#f7d22a", ground: "#f4f7fa" }
 const NS = "http://www.w3.org/2000/svg"
 export const DURATION = 6.0
 export const SETTLED = 5.15 // 워드마크가 제자리에 놓이는 시각
+export const ICON_DONE = 3.25 // 잉크 칸까지 펼쳐져 심볼이 완성되는 시각
+export const ICON_BOX = { x: 740, y: 320, size: 440 } // 그때 심볼이 놓인 자리(viewBox 좌표)
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v))
 const seg = (t, a, b) => clamp((t - a) / (b - a))

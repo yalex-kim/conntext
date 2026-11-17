@@ -105,7 +105,7 @@ if (document.body.classList.contains("landing")) {
 
   async function showIntro() {
     if (document.querySelector(".intro")) return
-    const { mountIntro, play } = await import("/assets/intro.js")
+    const { mountIntro, play, ICON_DONE, ICON_BOX } = await import("/assets/intro.js")
     const box = document.createElement("div")
     box.className = "intro"
     box.innerHTML = `<svg class="intro__stage" preserveAspectRatio="xMidYMid meet" role="img" aria-label="conntext 인트로: 노란 conn 라벨이 nn만 품은 채 줄어들어 Conntext 심볼이 됩니다"></svg>
@@ -117,27 +117,59 @@ if (document.body.classList.contains("landing")) {
     // 세로 화면: 16:9 장면에서 워드마크와 심볼이 지나가는 가운데 띠만 잘라 크게 보인다.
     if (innerWidth < innerHeight) stage.setAttribute("viewBox", "380 290 1160 500")
     intro.render(0)
+
     let stop = () => {}
+    let fly = null
     let closed = false
-    const close = () => {
+    const finish = () => {
       if (closed) return
       closed = true
       stop()
+      fly?.getAnimations().forEach((a) => a.cancel())
+      fly?.remove()
       box.classList.add("is-leaving")
       document.documentElement.classList.remove("intro-open")
       document.removeEventListener("keydown", onKey)
-      setTimeout(() => box.remove(), 500)
+      setTimeout(() => box.remove(), 260)
       try { sessionStorage.setItem(SEEN, "1") } catch {}
     }
-    const onKey = (e) => { if (e.key === "Escape") close() }
+    const onKey = (e) => { if (e.key === "Escape") finish() }
     document.addEventListener("keydown", onKey)
-    box.addEventListener("click", close)
-    stop = play(intro.render, { rate: 1.25, until: intro.settled, onDone: () => setTimeout(close, 550) })
+    box.addEventListener("click", finish)
+
+    // 심볼이 완성되면: 같은 자리에 심볼 이미지를 올리고, 잠깐 커졌다가 머리글 자리로 날아가 붙는다.
+    const handoff = () => {
+      if (closed) return
+      const target = document.querySelector(".topbar__mark")
+      const m = stage.getScreenCTM()
+      if (!target || !m) return finish()
+      const from = { x: m.e + m.a * ICON_BOX.x, y: m.f + m.d * ICON_BOX.y, s: m.a * ICON_BOX.size }
+      const to = target.getBoundingClientRect()
+      fly = document.createElement("img")
+      fly.className = "intro__fly"
+      fly.src = "/assets/brand/mark.svg"
+      fly.alt = ""
+      Object.assign(fly.style, { left: `${from.x}px`, top: `${from.y}px`, width: `${from.s}px`, height: `${from.s}px` })
+      document.body.append(fly)
+      box.classList.add("is-handoff")
+      // 커지는 동안은 배경을 두고, 날아가기 시작할 때 걷어 페이지를 드러낸다.
+      setTimeout(() => box.classList.add("is-revealing"), 280)
+      const k = to.width / from.s
+      const dx = to.left - from.x, dy = to.top - from.y
+      const grow = 1.12, c = (from.s * (1 - grow)) / 2   // 가운데를 기준으로 커지게
+      const anim = fly.animate([
+        { transform: "translate(0px, 0px) scale(1)", offset: 0, easing: "cubic-bezier(0.2, 0.8, 0.3, 1)" },
+        { transform: `translate(${c}px, ${c}px) scale(${grow})`, offset: 0.3, easing: "cubic-bezier(0.65, 0, 0.35, 1)" },
+        { transform: `translate(${dx}px, ${dy}px) scale(${k})`, offset: 1 },
+      ], { duration: 980, fill: "forwards" })
+      anim.finished.then(finish, () => {})
+    }
+    stop = play(intro.render, { rate: 1.4, until: ICON_DONE, onDone: () => setTimeout(handoff, 120) })
   }
 
   let seen = false
   try { seen = sessionStorage.getItem(SEEN) === "1" } catch {}
   if (!reduce && !seen && !location.hash) showIntro()
-  document.querySelector("[data-intro]")?.addEventListener("click", () => { if (!reduce) showIntro() })
+  document.querySelector("[data-intro]")?.addEventListener("click", () => { if (reduce) return; scrollTo({ top: 0 }); showIntro() })
   if (reduce) document.querySelector("[data-intro]")?.setAttribute("hidden", "")
 }

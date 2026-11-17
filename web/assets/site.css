@@ -36,7 +36,10 @@ html { scroll-behavior: smooth; }
   height: 56px; padding: 0 var(--pad, 40px);
 }
 .topbar .wordmark { height: 22px; }
-.topbar__brand { display: inline-flex; border-radius: 4px; }
+.topbar__brand { display: inline-flex; align-items: center; gap: 10px; border-radius: 4px; }
+.topbar__mark { width: 28px; height: 28px; display: block; }
+/* 인트로 중에는 날아올 심볼이 내려앉을 자리만 비워 둔다 */
+html.intro-open .topbar__mark { visibility: hidden; }
 .topbar nav { display: flex; gap: var(--s-1); }
 .topbar nav a {
   display: inline-flex; align-items: center; height: 36px; padding: 0 var(--s-3); border-radius: var(--r-2);
@@ -519,17 +522,23 @@ a.secno:hover { text-decoration: none; filter: brightness(0.96); }
 .manual [id] { scroll-margin-top: 64px; }
 .steps .term + p { margin-top: var(--s-3); }
 
-/* 첫 방문 인트로: 화면을 덮었다가 워드마크가 놓이면 사라진다 */
+/* 첫 방문 인트로: 글자가 심볼이 되면, 심볼이 잠깐 커졌다가 머리글 자리로 날아가 붙고
+   그동안 배경이 걷혀 페이지가 드러난다 */
 .intro {
   position: fixed; inset: 0; z-index: 100;
   display: grid; place-items: center;
   background: var(--ground);
   cursor: pointer;
-  transition: opacity var(--dur-3) var(--ease-out), visibility 0s linear var(--dur-3);
+  transition: background-color 520ms var(--ease-out);
 }
-.intro.is-leaving { opacity: 0; visibility: hidden; }
+.intro.is-revealing { background-color: transparent; pointer-events: none; }
+.intro.is-revealing .intro__skip { opacity: 0; }
 .intro__stage { width: min(100vw, 177.78vh); height: auto; max-height: 100vh; display: block; }
-.intro__skip { position: absolute; top: var(--s-4); right: var(--s-4); }
+.intro.is-handoff .intro__stage, .intro.is-leaving .intro__stage { visibility: hidden; }
+.intro.is-handoff .intro__skip { opacity: 0; }
+.intro.is-leaving { opacity: 0; transition: opacity 240ms var(--ease-out); }
+.intro__skip { position: absolute; top: var(--s-4); right: var(--s-4); transition: opacity 200ms; }
+.intro__fly { position: fixed; z-index: 101; display: block; margin: 0; pointer-events: none; transform-origin: 0 0; will-change: transform; }
 html.intro-open { overflow: hidden; }
 .foot__intro {
   font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer;
