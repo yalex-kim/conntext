@@ -24,5 +24,5 @@ EMBED_BASE_URL = os.environ.get("CONNTEXT_EMBED_BASE_URL", "")
 EMBED_MODEL = os.environ.get("CONNTEXT_EMBED_MODEL", "")
 EMBED_API_KEY = os.environ.get("CONNTEXT_EMBED_API_KEY", "")
 
-PIPELINE_VERSION = "p2"          # 프롬프트·판정 로직이 바뀌면 올린다. 재처리 대상 선별에 쓴다.
+PIPELINE_VERSION = "p3"          # 프롬프트·판정 로직이 바뀌면 올린다. 재처리 대상 선별에 쓴다.
 MIN_PLUGIN_VERSION = "0.1.0"

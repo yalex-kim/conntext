@@ -220,6 +220,7 @@ def _job_reprocess(p):
     if not m or m["status"] != "active":
         return
     from . import embed
+    pipeline.retitle(m)
     db.ex("UPDATE memos SET embedding=?, pipeline_version=? WHERE id=?", embed.pack(embed.embed(m["body"])), config.PIPELINE_VERSION, m["id"])
     for tid in pipeline._topics_of(m["id"]):
         pipeline.mark_dirty(tid)
