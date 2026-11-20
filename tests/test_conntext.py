@@ -465,6 +465,54 @@ class TestSearchScope(Base):
         self.assertTrue(db.q("SELECT 1 FROM trace WHERE stage='fts_error'"))
 
 
+class TestTitle(Base):
+    """규칙 기반 제목은 의미 경계에서 끊고 단어 중간에서 자르지 않는다(이슈 #4)."""
+
+    def first_sentence(self, body):
+        import re
+        t = re.sub(r"\s+", " ", body.strip().splitlines()[0].replace("`", "")).strip()
+        return re.sub(r"[.。!?…]+$", "", re.split(r"(?<=[.!?。])\s", t)[0]).strip()
+
+    def test_short_sentence_kept_whole_without_period(self):
+        self.assertEqual(pipeline._title("OTA 롤백은 A/B 파티션 방식. 부팅 3회 연속 실패 시 이전 슬롯으로 돌아간다"), "OTA 롤백은 A/B 파티션 방식")
+        self.assertEqual(pipeline._title("커밋 메시지는 conventional commits 형식으로 작성해 줘"), "커밋 메시지는 conventional commits 형식으로 작성해 줘")
+
+    def test_cuts_at_clause_boundary(self):
+        self.assertEqual(pipeline._title("OTA 펌웨어 서명 키는 HSM에 있고, 서명 요청은 ota-signer 서비스로만 한다"), "OTA 펌웨어 서명 키는 HSM에 있고")
+
+    def test_particle_after_parenthesis_is_not_a_boundary(self):
+        t = pipeline._title("BLE 연결 간격(connection interval)은 30ms로 고정한다. 15ms로 줄이면 전류가 2배")
+        self.assertTrue(t.startswith("BLE 연결 간격(connection interval)은"), t)
+
+    def test_no_title_is_cut_mid_word(self):
+        from conntext import seed
+        bodies = [b for *_, b in seed.MEMOS_DOHYUN + seed.MEMOS_JIMIN + seed.MEMOS_TAEKYUNG]
+        for body in bodies:
+            t, full = pipeline._title(body), self.first_sentence(body)
+            self.assertLessEqual(len(t), pipeline.TITLE_MAX + 1, t)
+            stem = t[:-1] if t.endswith("…") else t
+            self.assertTrue(full.startswith(stem), (t, full))
+            nxt = full[len(stem):len(stem) + 1]
+            self.assertTrue(nxt == "" or nxt.isspace() or nxt in ",;:)]-", f"단어 중간에서 잘림: {t!r} / {full!r}")
+
+    def test_space_less_run_is_cut_with_ellipsis(self):
+        t = pipeline._title("https://wiki.corp.example/display/CONN/OTA+rollout+checklist+for+gateway")
+        self.assertEqual(len(t), pipeline.TITLE_MAX + 1)
+        self.assertTrue(t.endswith("…"))
+
+    def test_reprocess_retitles_only_legacy_rule_titles(self):
+        body = "커밋 메시지는 conventional commits 형식으로 작성해 줘"
+        a = pipeline.remember(self.alice, body, do_analyze=False)["memo_id"]
+        b = pipeline.remember(self.alice, "게이트웨이 헬스체크 엔드포인트는 /healthz, ble-bridge는 포트 9102", do_analyze=False)["memo_id"]
+        db.ex("UPDATE memos SET title=? WHERE id=?", pipeline._legacy_title(body), a)      # p2 규칙이 만든 제목
+        db.ex("UPDATE memos SET title=? WHERE id=?", "헬스체크 포트 정리", b)               # LLM·사람이 정한 제목
+        jobs.enqueue("reprocess_memo", {"memo_id": a}); jobs.enqueue("reprocess_memo", {"memo_id": b})
+        jobs.drain()
+        self.assertEqual(self.memo(a)["title"], body)
+        self.assertEqual(self.memo(b)["title"], "헬스체크 포트 정리")
+        self.assertEqual(db.val("SELECT title FROM memos_fts WHERE rowid=?", a), body)
+
+
 class TestSessions(Base):
     JSONL = "\n".join(json.dumps(x, ensure_ascii=False) for x in [
         {"type": "user", "message": {"role": "user", "content": "토큰 갱신 테스트 실패 원인 찾아줘"}},

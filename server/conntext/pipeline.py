@@ -43,10 +43,64 @@ def heuristic_kind(text):
     return "knowledge"
 
 
+TITLE_MAX = 40
+CLAUSE_END = re.compile(r"[,;:)\]]|[,;:]?\s[-–—]\s")   # 이 뒤에서 끊으면 앞부분이 한 덩어리로 읽힌다
+
+
 def _title(text):
+    """규칙 기반 제목: 첫 문장을 의미 경계에서 끊는다. 단어 중간에서는 자르지 않는다.
+
+    1. 첫 줄의 첫 문장만 쓴다. 끝의 마침표는 뗀다.
+    2. TITLE_MAX 안이면 그대로 쓴다.
+    3. 넘으면 한도 안의 마지막 절 경계(쉼표, 쌍점, 괄호 닫힘, 줄표) 뒤에서 끊는다. 앞부분이 너무 짧으면 쓰지 않는다.
+    4. 그것도 없으면 한도 안의 마지막 공백에서 끊고 "…"를 붙인다.
+    5. 공백이 없는 긴 덩어리(주소 등)만 한도에서 자르고 "…"를 붙인다.
+    """
+    first = next((ln for ln in text.strip().splitlines() if ln.strip()), "")
+    t = re.sub(r"\s+", " ", first.replace("`", "")).strip()
+    t = re.split(r"(?<=[.!?。])\s", t)[0]
+    t = re.sub(r"[.。!?…]+$", "", t).strip()
+    if len(t) <= TITLE_MAX:
+        return t
+    head = t[:TITLE_MAX + 1]
+    cuts = []
+    for m in CLAUSE_END.finditer(head):
+        i, g = m.start(), m.group(0)
+        if i > TITLE_MAX:
+            continue
+        if g in ")]":
+            # 괄호 바로 뒤에 조사가 붙으면("간격(…)은") 구절이 이어지는 중이라 경계가 아니다.
+            nxt = t[i + 1:i + 2]
+            if nxt and not nxt.isspace() and nxt not in ",;:.":
+                continue
+            i += 1
+        cuts.append(i)
+    cuts = [c for c in cuts if c >= TITLE_MAX * 0.45]
+    if cuts:
+        return t[:cuts[-1]].rstrip(" ,;:-–—")
+    sp = head.rfind(" ")
+    if sp >= TITLE_MAX * 0.3:
+        return t[:sp].rstrip(" ,;:") + "…"
+    return t[:TITLE_MAX] + "…"
+
+
+def _legacy_title(text):
+    """p2까지 쓰던 규칙 기반 제목. 재처리 때 규칙이 만든 제목인지 알아보는 데만 쓴다."""
     t = re.sub(r"\s+", " ", text).strip()
     t = re.split(r"(?<=[.!?。])\s|\n", t)[0]
     return t[:30] + ("…" if len(t) > 30 else "")
+
+
+def retitle(memo):
+    """옛 규칙이 만든 제목이면 새 규칙으로 바꾼다. LLM이나 사람이 정한 제목은 건드리지 않는다."""
+    if not memo["body"] or memo["title"] != _legacy_title(memo["body"]):
+        return False
+    new = _title(memo["body"])
+    if new == memo["title"]:
+        return False
+    db.ex("UPDATE memos SET title=? WHERE id=?", new[:60], memo["id"])
+    db.ex("UPDATE memos_fts SET title=? WHERE rowid=?", new[:60], memo["id"])
+    return True
 
 
 TOPIC_MARK = re.compile(r"^(.{2,28}?)(?:\([^)]{0,40}\))?(?:은|는|:)(?=\s)")
