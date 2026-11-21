@@ -73,10 +73,13 @@ await step('후보 확인 후 되돌리기', async () => {
   await page.waitForSelector(`[data-confirm="${id}"]`);
 });
 
-await step('위키 근거 태그로 메모 열기', async () => {
+await step('위키 근거 번호 → 미리보기 → 원문 열기', async () => {
   await page.goto(`${BASE}/app#/wiki/1`);
-  await page.waitForSelector('.doc__body button[data-memo="12"]');
-  await page.click('.doc__body button[data-memo="12"]');
+  await page.waitForSelector('.doc__body button[data-cite="12"]');
+  await page.click('.doc__body button[data-cite="12"]');
+  await page.waitForSelector('.cite-pop');
+  expect((await page.textContent('.cite-pop')).includes('m:12'), '미리보기가 m:12가 아님');
+  await page.click('.cite-pop button[data-memo="12"]');
   await page.waitForURL(/\?m=12/);
   await page.waitForSelector('#wiki-side .memo__body');
   expect((await page.textContent('#wiki-side .memo__title')).includes('m:12'), '옆 패널이 m:12가 아님');

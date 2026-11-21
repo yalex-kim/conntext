@@ -1,5 +1,6 @@
 /* memo-view.js: 메모 상세(메모 화면과 위키 옆 패널이 함께 쓴다), 팀으로 공유 대화상자, 신고 대화상자. */
 import {
+  memoName,
   api, busy, emit, errorState, fmtDate, fmtNum, html, icon, KIND_LABEL, loading, memoTag, on, openDialog, platformName,
   projectChip, render, SOURCE_LABEL, STATUS_LABEL, teamSpaces, tierOf, TIER_LABEL, timeAgo, toast, $,
 } from './core.js';
@@ -109,7 +110,7 @@ export async function renderMemoDetail(container, id, opts = {}) {
     return html`<form class="memo__edit" id="memo-edit-form">
       <label class="field__label" for="memo-edit">고친 내용</label>
       <textarea class="textarea" id="memo-edit" rows="5">${m.body}</textarea>
-      <p class="field__hint">원문 m:${m.id}는 고치지 않고 그대로 남습니다. 고친 내용은 새 메모로 저장되어 m:${m.id}를 대체하고, 대체 이력에서 둘 다 볼 수 있습니다. 저장한 뒤 되돌릴 수 있습니다.</p>
+      <p class="field__hint">원문은 그대로 남고 고친 내용이 새 판이 됩니다. 이력에서 둘 다 볼 수 있고, 저장한 뒤 되돌릴 수 있습니다.</p>
       <div class="memo__edit-acts"><button type="submit" class="btn btn--primary btn--sm">새 판으로 저장</button><button type="button" class="btn btn--sm" data-act="cancel-edit">취소</button></div>
     </form>`;
   }
@@ -133,7 +134,7 @@ export async function renderMemoDetail(container, id, opts = {}) {
         const btn = e.submitter || root.querySelector('#memo-edit-form [type=submit]');
         await busy(btn, async () => {
           const res = await api(`/api/memos/${m.id}`, { method: 'PUT', body: { text } });
-          showReceipt(res, { title: `m:${m.id}를 고쳤습니다` });
+          showReceipt(res, { title: `${memoName(m)} 메모를 고쳤습니다` });
           emit('memo-saved', res);
           opts.onChange?.('edited', res);
         });
@@ -171,7 +172,7 @@ export async function renderMemoDetail(container, id, opts = {}) {
         if (!kind) return;
         await busy(submit, async () => {
           const res = await api(`/api/memos/${m.id}`, { method: 'PUT', body: { kind } });
-          showReceipt(res, { undoneText: `m:${m.id}의 종류를 ${KIND_LABEL[m.kind]}(으)로 되돌렸습니다.` });
+          showReceipt(res, { undoneText: `${memoName(m)}의 종류를 ${KIND_LABEL[m.kind]}(으)로 되돌렸습니다.` });
           emit('memo-saved', res);
           opts.onChange?.('kind', res);
         });
@@ -182,7 +183,7 @@ export async function renderMemoDetail(container, id, opts = {}) {
       toast(`${res.message.split('\n')[0]}. 7일 안에는 되돌릴 수 있습니다.`, {
         action: { label: '되돌리기', run: async () => {
           await api(`/api/events/${res.event_id}/undo`, { method: 'POST', body: {} });
-          toast(`m:${m.id}를 되살렸습니다.`);
+          toast(`${memoName(m)} 메모를 되살렸습니다.`);
           emit('memo-saved', {});
           opts.onChange?.('restored', { memo_id: m.id });
         } },
@@ -192,13 +193,13 @@ export async function renderMemoDetail(container, id, opts = {}) {
     }));
     handle('[data-act="confirm"]', (b) => busy(b, async () => {
       const res = await api(`/api/memos/${m.id}/confirm`, { method: 'POST', body: {} });
-      toast(`m:${m.id}: ${res.message}`, { action: undoAction(res.event_id) });
+      toast(`${memoName(m)}을(를) 정식 메모로 올렸습니다.`, { action: undoAction(res.event_id) });
       emit('memo-saved', res);
       opts.onChange?.('confirmed', res);
     }));
     handle('[data-act="dismiss"]', (b) => busy(b, async () => {
       const res = await api(`/api/memos/${m.id}/dismiss`, { method: 'POST', body: {} });
-      toast(`m:${m.id}: ${res.message}`, { action: undoAction(res.event_id) });
+      toast(`${memoName(m)} 후보를 버렸습니다.`, { action: undoAction(res.event_id) });
       emit('memo-saved', res);
       opts.onChange?.('dismissed', res);
     }));
@@ -320,7 +321,7 @@ export async function promoteDialog({ memoIds, topicId, title } = {}) {
 // ── 신고 ────────────────────────────────────────────────────────────
 export function reportDialog(m) {
   const dlg = openDialog({
-    title: `m:${m.id} 신고`,
+    title: `${memoName(m)} 신고`,
     body: html`<p class="muted">틀렸거나 오래된 팀 지식을 팀 관리자에게 알립니다. 관리자가 확인한 뒤 내리거나 그대로 둡니다.</p>
       <blockquote class="quote">${m.body}</blockquote>
       <div class="field"><label class="field__label" for="rp-reason">무엇이 문제인가요</label>

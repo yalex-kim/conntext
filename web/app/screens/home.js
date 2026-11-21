@@ -1,5 +1,6 @@
 /* 홈: 내 공간(이어서 할 일, 세션 후보, 최근 저장 내역) / 팀 공간(최근 지식, 많이 참조된 주제, 구성원, 신고) */
 import {
+  memoName,
   api, busy, confirmDialog, daysLeft, emit, emptyState, fmtDate, fmtNum, html, icon, isTeam, listen, loading, memoTag, on,
   pageHead, platformName, projectChip, registerScreen, render, spaceQuery, state, timeAgo, toast, tierOf, KIND_LABEL,
 } from '../core.js';
@@ -7,9 +8,13 @@ import { undoAction } from '../memo-view.js';
 
 registerScreen('/home', async (root, ctx) => {
   render(root, loading());
+  let last = null;
+  // 알림 문구에 쓸 후보 메모(제목)를 찾는다. 못 찾으면 memoName이 '이 메모'로 쓴다.
+  const candidate = (id) => (last?.candidates || []).find((c) => String(c.id) === String(id));
   const load = async () => {
     const data = await api('/api/home', { query: spaceQuery(), signal: ctx.signal });
     if (ctx.signal.aborted) return;
+    last = data;
     if (data.kind === 'team') paintTeam(root, data);
     else paintPersonal(root, data);
   };
@@ -20,13 +25,13 @@ registerScreen('/home', async (root, ctx) => {
   on(root, 'click', '[data-confirm]', (e, b) => busy(b, async () => {
     const id = b.dataset.confirm;
     const r = await api(`/api/memos/${id}/confirm`, { method: 'POST', body: {} });
-    toast(`m:${id}: ${r.message}`, { action: undoAction(r.event_id) });
+    toast(`${memoName(candidate(id))}을(를) 정식 메모로 올렸습니다.`, { action: undoAction(r.event_id) });
     emit('memo-saved', r);
   }));
   on(root, 'click', '[data-dismiss]', (e, b) => busy(b, async () => {
     const id = b.dataset.dismiss;
     const r = await api(`/api/memos/${id}/dismiss`, { method: 'POST', body: {} });
-    toast(`m:${id}: ${r.message}`, { action: undoAction(r.event_id) });
+    toast(`${memoName(candidate(id))} 후보를 버렸습니다.`, { action: undoAction(r.event_id) });
     emit('memo-saved', r);
   }));
   on(root, 'click', '[data-undo]', (e, b) => busy(b, async () => {
