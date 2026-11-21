@@ -1,6 +1,6 @@
-/* 위키: 주제 문서 목록(저장소별), 문서 보기(근거 태그 → 옆 패널), 지시·선호 목록, 개체 */
+/* 위키: 주제 문서 목록(저장소별), 문서 보기(근거 각주 → 미리보기 → 옆 패널), 지시·선호 목록, 개체 */
 import {
-  api, busy, confirmDialog, emptyState, errorState, fmtNum, html, icon, isTeam, KIND_LABEL, listen, loading, memoTag, navigate, on,
+  api, busy, confirmDialog, emptyState, errorState, fmtDate, fmtNum, html, icon, memoName, isTeam, KIND_LABEL, listen, loading, memoTag, navigate, on,
   pageHead, projectChip, registerScreen, render, spaceQuery, state, timeAgo, toast, tierOf, TIER_LABEL, emit,
 } from '../core.js';
 import { renderMarkdown } from '../markdown.js';
@@ -152,10 +152,15 @@ async function wikiScreen(root, ctx) {
     const onlyCand = active.length && active.every((m) => m.trust === 'low');
     const personal = t.space_kind === 'personal';
     const canRename = personal || d.role === 'admin';
+    // 근거 표시: 문서 안에 처음 나온 순서대로 번호를 매긴다. 같은 메모는 같은 번호를 다시 쓴다.
+    const order = new Map();
     const cite = (mid) => {
+      if (!order.has(mid)) order.set(mid, order.size + 1);
+      const n = order.get(mid);
       const m = byId.get(mid);
       const tier = m ? tierOf(m) : personal ? 'mine' : 'team';
-      return memoTag(m || { id: mid }, { button: true, tier, by: false });
+      const label = `근거 ${n}: ${TIER_LABEL[tier]}, ${m ? memoName(m) : '메모'}`;
+      return html`<button type="button" class="cite cite--${tier}" data-cite="${mid}" aria-haspopup="dialog" aria-expanded="false" aria-label="${label}">${n}</button>`;
     };
     render(docEl, html`<article class="doc" aria-labelledby="doc-title">
       ${backLink()}
@@ -175,10 +180,10 @@ async function wikiScreen(root, ctx) {
       ${onlyCand ? html`<div class="alert alert--warn">${icon('info')}<div><p class="alert__title">미확인 후보만 있는 주제입니다</p>
         <p>이 문서의 메모는 모두 세션에서 자동으로 추출됐고 아직 확인되지 않았습니다. 확인하기 전에는 에이전트의 지식 색인에 들어가지 않습니다. 근거 표시를 눌러 확인하거나 버리세요.</p></div></div>` : ''}
       <div class="prose doc__body">${t.summary ? renderMarkdown(t.summary, { cite }) : html`<p class="muted">아직 문서가 생성되지 않았습니다. "다시 생성"을 누르세요.</p>`}</div>
-      <p class="legend">근거 표시를 누르면 원문 메모가 옆에 열립니다.
-        <span class="tag tag--${personal ? 'mine' : 'team'}">${personal ? '내 메모' : '팀 지식'}</span>
-        ${personal ? html`<span class="tag tag--candidate">미확인 후보</span>` : ''}
-        <span class="tag tag--superseded">대체됨</span></p>
+      <p class="legend">근거 번호를 누르면 원문 미리보기가 열립니다.
+        <span class="legend__item"><span class="cite cite--${personal ? 'mine' : 'team'}" aria-hidden="true">1</span>${personal ? '내 메모' : '팀 지식'}</span>
+        ${personal ? html`<span class="legend__item"><span class="cite cite--candidate" aria-hidden="true">1</span>미확인 후보</span>` : ''}
+        <span class="legend__item"><span class="cite cite--superseded" aria-hidden="true">1</span>대체됨</span></p>
     </article>`);
     if (renaming) {
       const inp = docEl.querySelector('#rename-input');
@@ -217,7 +222,64 @@ async function wikiScreen(root, ctx) {
     const r = await promoteDialog({ topicId: t.id, title: `“${t.title}” 주제를 팀으로 공유` });
     if (r) loadList().catch(() => {});
   });
-  on(docEl, 'click', 'button[data-memo]', (e, b) => openMemo(Number(b.dataset.memo)));
+  on(docEl, 'click', 'button[data-memo]', (e, b) => { closeCite(false); openMemo(Number(b.dataset.memo)); });
+  on(docEl, 'click', 'button[data-cite]', (e, b) => {
+    e.stopPropagation();
+    if (pop && pop.anchor === b) closeCite(true);
+    else openCite(b);
+  });
+
+  // ── 근거 미리보기 ────────────────────────────────────────────────
+  // 각주 번호 바로 아래에 등급, 작성자, 날짜, 원문을 보여 준다. m:번호는 여기와 옆 패널에만 남긴다.
+  let pop = null;
+  function closeCite(refocus) {
+    if (!pop) return;
+    const { el, anchor } = pop;
+    pop = null;
+    el.remove();
+    anchor.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', onPopKey);
+    document.removeEventListener('click', onOutside, true);
+    if (refocus && anchor.isConnected) anchor.focus();
+  }
+  const onPopKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeCite(true); } };
+  const onOutside = (e) => { if (pop && !pop.el.contains(e.target) && e.target !== pop.anchor) closeCite(false); };
+  function openCite(anchor) {
+    closeCite(false);
+    const doc = docEl.querySelector('.doc');
+    const mid = Number(anchor.dataset.cite);
+    const m = cur.topic?.memos.find((x) => x.id === mid);
+    const el = document.createElement('div');
+    el.className = 'cite-pop';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', `근거 ${anchor.textContent} 미리보기`);
+    if (!m) {
+      render(el, html`<p class="muted">이 메모를 찾을 수 없습니다. 지워졌거나 문서가 오래됐을 수 있습니다. "다시 생성"을 눌러 보세요.</p>`);
+    } else {
+      const tier = tierOf(m);
+      const uses = (m.use_count || 0);
+      render(el, html`
+        <p class="cite-pop__meta"><span class="cite cite--${tier}" aria-hidden="true">${anchor.textContent}</span>
+          <strong>${TIER_LABEL[tier]}</strong>${m.author_name ? html`<span>${m.author_name}</span>` : ''}<span>${fmtDate(m.created_at)}</span>
+          <span>${uses ? html`답에 쓰임 <span class="num">${fmtNum(uses)}</span>회` : '아직 답에 쓰이지 않음'}</span></p>
+        <p class="cite-pop__body">${m.body}</p>
+        ${m.status === 'superseded' ? html`<p class="cite-pop__note">새 판으로 대체된 이전 기록입니다. 지금은 유효하지 않습니다.</p>` : ''}
+        <div class="cite-pop__foot"><span class="mono cite-pop__id">m:${m.id}</span>
+          <button type="button" class="btn btn--sm" data-memo="${m.id}">${icon('external', 'icon--sm')}<span>원문 열기</span></button></div>`);
+    }
+    doc.append(el);
+    // 번호 바로 아래에 둔다. 문서 폭을 넘지 않게 왼쪽을 당긴다.
+    const dr = doc.getBoundingClientRect();
+    const ar = anchor.getBoundingClientRect();
+    const w = el.offsetWidth;
+    el.style.top = `${ar.bottom - dr.top + 6}px`;
+    el.style.left = `${Math.max(0, Math.min(ar.left - dr.left - 12, dr.width - w))}px`;
+    anchor.setAttribute('aria-expanded', 'true');
+    pop = { el, anchor };
+    document.addEventListener('keydown', onPopKey);
+    setTimeout(() => document.addEventListener('click', onOutside, true));
+    el.querySelector('button')?.focus({ preventScroll: true });
+  }
   on(side, 'click', 'button[data-memo]', (e, b) => openMemo(Number(b.dataset.memo)));
 
   function openMemo(id) {

@@ -38,6 +38,7 @@
    on(root, 'click', '[data-act=x]', (e, el) => …)   위임 이벤트.
    api(path, {method, body, query, signal})  → JSON. 실패하면 ApiError(status, message).
    memoTag(memo, {href|button, lg})  등급 라벨 태그. tierOf(memo)로 등급 계산.
+   memoName(memo)  화면 문구에서 메모를 가리키는 이름(‘제목’). 문구에 m:번호를 쓰지 않는다.
    fmtAgo / fmtDate / fmtDateTime / fmtNum / fmtTokens / timeAgo(ts)(<time> 요소)
    toast(text, {action: {label, run}, tone: 'error'})
    confirmDialog({title, body, confirmLabel, danger, typeToConfirm}) → Promise<boolean>
@@ -377,6 +378,13 @@ export function tierOf(m) {
  * 등급 라벨 태그. memo는 { id, tier?, status?, kind?, trust?, author_name|author? }.
  * opts.href: 링크로, opts.button: 버튼으로(data-memo에 id), opts.lg: 큰 크기, opts.by=false: 작성자 생략.
  */
+/** 화면 문구에서 메모를 가리킬 때 쓰는 이름. id 대신 제목을 ‘ ’로 감싼다. */
+export function memoName(m, n = 32) {
+  let t = String((m && (m.title || m.body)) || '').split('\n')[0].replace(/\s+/g, ' ').trim();
+  t = t.replace(/[.。]+$/, '');
+  if (t.length > n) t = t.slice(0, n).replace(/\s+\S*$/, '') + '…';
+  return t ? `‘${t}’` : '이 메모';
+}
 export function memoTag(m, opts = {}) {
   const tier = opts.tier || tierOf(m);
   const cls = `tag tag--${tier}${opts.lg ? ' tag--lg' : ''}`;
