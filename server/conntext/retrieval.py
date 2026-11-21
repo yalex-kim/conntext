@@ -68,6 +68,11 @@ def search(space_ids, query, project_key=None, limit=8, statuses=("active",), ex
         base = 0.7 * max(cos, 0.0) + 0.3 * kw
         tier = tier_of(m, m["space_kind"])
         score = base * TIER_WEIGHT[tier]
+        if m["space_kind"] == "team" and m["origin_memo_id"]:
+            from .pipeline import origin_state
+            m["origin_state"] = origin_state(m)
+            if m["origin_state"]:
+                score *= 0.8   # 작성자가 원본을 고쳤거나 지웠다. 낡았을 수 있는 내용은 한 단계 뒤로.
         if m["scope"] == "project":
             score *= 1.15 if (project_key and m["project_key"] == project_key) else (0.55 if project_key else 0.9)
         if score >= min_score:
@@ -84,6 +89,7 @@ def _memo_view(m):
         "id": m["id"], "tier": m["tier"], "label": TIER_LABEL[m["tier"]], "space": m["space_name"],
         "author": m["author_name"], "kind": m["kind"], "scope": m["scope"], "project_key": m["project_key"],
         "created_at": m["created_at"], "title": m["title"], "body": m["body"], "score": m["score"],
+        "origin_state": m.get("origin_state"),
         "topics": topics,
     }
 
@@ -93,9 +99,17 @@ def recall(user, query, project_key=None, session_ext_id=None, limit=6, log=True
     t0 = time.time()
     sids = access.space_ids(user["id"])
     hits = search(sids, query, project_key, limit=limit + 4)
-    # 내가 팀에 올린 복사본이 원본과 함께 나오면 원본만 남긴다.
+    # 내가 팀에 올린 사본이 원본(또는 원본의 지금 판)과 함께 나오면 내 것만 남긴다.
+    from .pipeline import current_of
     mine = {m["id"] for m in hits}
-    hits = [m for m in hits if not (m["origin_memo_id"] and m["origin_memo_id"] in mine)][:limit]
+    def shadowed(m):
+        if not m["origin_memo_id"]:
+            return False
+        if m["origin_memo_id"] in mine:
+            return True
+        head = current_of(m["origin_memo_id"]) if m.get("origin_state") == "changed" else None
+        return bool(head and head["id"] in mine)
+    hits = [m for m in hits if not shadowed(m)][:limit]
     results = [_memo_view(m) for m in hits]
     topic_ids, topics = [], []
     for r in results:

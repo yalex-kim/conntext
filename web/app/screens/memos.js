@@ -114,6 +114,7 @@ async function memosScreen(root, ctx) {
           ${m.scope === 'project' && m.project ? html`<span class="mono">${m.project}</span>` : html`<span>전체 범위</span>`}
           ${m.topics[0] ? html`<span>${m.topics[0].title}</span>` : ''}
           ${m.status !== 'active' ? html`<span>${STATUS_LABEL[m.status] || m.status}</span>` : ''}
+          ${m.origin_state ? html`<span class="chip chip--warn">${m.origin_state === 'deleted' ? '원본이 삭제됨' : '원본이 바뀜'}</span>` : ''}
           ${m.use_count ? html`<span>답에 <span class="num">${m.use_count}</span>회 쓰임</span>` : ''}
           <span class="mrow__time">${timeAgo(m.created_at)}</span>
         </span></a></li>`)}</ul>`);

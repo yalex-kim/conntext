@@ -370,6 +370,53 @@ def remember(user, text, *, space_id=None, scope=None, project_key=None, kind=No
     return describe(mid, event_id=eid, detail=detail)
 
 
+# ── 판의 계보: 원본을 고치면 새 판이 이전 판을 대체한다(superseded_by). 팀 사본은 공유 당시의
+#    원본 id만 기억하므로(origin_memo_id), 계보를 따라가야 사본이 낡았는지 안다.
+def current_of(memo_id, limit=50):
+    """대체 이력을 앞으로 따라가 지금 판을 돌려준다. 없으면 None."""
+    m = db.one("SELECT id, status, superseded_by FROM memos WHERE id=?", memo_id)
+    seen = set()
+    while m and m["status"] in ("superseded", "duplicate") and m["superseded_by"] and m["id"] not in seen and len(seen) < limit:
+        seen.add(m["id"])
+        m = db.one("SELECT id, status, superseded_by FROM memos WHERE id=?", m["superseded_by"])
+    return m
+
+
+def lineage(memo_id, limit=50):
+    """이 메모와 그 이전 판들의 id. 이 메모가 맨 앞이다."""
+    ids, frontier = [memo_id], [memo_id]
+    while frontier and len(ids) < limit:
+        rows = db.q(f"SELECT id FROM memos WHERE superseded_by IN ({','.join('?' * len(frontier))}) AND status IN ('superseded','duplicate')", *frontier)
+        frontier = [r["id"] for r in rows if r["id"] not in ids]
+        ids += frontier
+    return ids
+
+
+def origin_state(memo):
+    """팀 사본의 원본이 그 뒤에 바뀌었는지. 'changed' | 'deleted' | None.
+    작성자가 원본을 고치거나 지운 사실만 알 뿐, 개인 공간의 내용은 드러내지 않는다."""
+    oid = memo.get("origin_memo_id")
+    if not oid or memo.get("space_kind", "team") != "team":
+        return None
+    head = current_of(oid)
+    if not head or head["status"] == "deleted":
+        return "deleted" if head else None
+    if head["id"] != oid:
+        return "changed"
+    return None
+
+
+def stale_team_copies(memo_id, space_id=None):
+    """이 메모의 이전 판을 공유해 둔, 아직 갱신되지 않은 팀 사본들."""
+    older = lineage(memo_id)[1:]
+    if not older:
+        return []
+    return db.q(f"SELECT m.id, m.space_id, s.name AS team FROM memos m JOIN spaces s ON s.id=m.space_id "
+                f"WHERE s.kind='team' AND m.status='active' AND m.origin_memo_id IN ({','.join('?' * len(older))}) "
+                + ("AND m.space_id=? " if space_id else "") + "ORDER BY m.id",
+                *older, *((space_id,) if space_id else ()))
+
+
 def describe(memo_id, event_id=None, detail=None):
     """저장 결과를 사람이 읽는 한 줄과 함께 돌려준다. 터미널과 웹이 같은 문구를 쓴다."""
     m = db.one("SELECT * FROM memos WHERE id=?", memo_id)
@@ -393,6 +440,9 @@ def describe(memo_id, event_id=None, detail=None):
         lines.append("새 주제 문서를 만들었습니다.")
     if detail.get("masked"):
         lines.append(f"민감 정보 {detail['masked']}건을 마스킹했습니다.")
+    stale = stale_team_copies(m["id"]) if rel == "update" and m["status"] == "active" else []
+    for team in dict.fromkeys(c["team"] for c in stale):
+        lines.append(f"팀 ‘{team}’에 공유된 이전 판이 그대로 있습니다. 웹에서 이 메모를 열어 팀 사본을 갱신할 수 있습니다.")
     return {"memo_id": m["id"], "event_id": event_id, "kind": m["kind"], "scope": m["scope"], "project_key": m["project_key"],
             "status": m["status"], "relation": rel or "none", "target_id": target["id"] if target else None,
             "topics": topics, "masked": detail.get("masked", 0), "message": "\n".join(lines)}
@@ -428,6 +478,8 @@ def undo(user, event_id):
         if d.get("relation") == "update" and d.get("target_id"):
             db.ex("UPDATE memos SET status=?, superseded_by=NULL, updated_at=? WHERE id=? AND superseded_by=?",
                   d.get("prev_target_status") or "active", now, d["target_id"], mid)
+        for oid in d.get("also_superseded") or []:
+            db.ex("UPDATE memos SET status='active', superseded_by=NULL, updated_at=? WHERE id=? AND superseded_by=?", now, oid, mid)
         for tid in d.get("topic_ids") or []:
             db.ex("DELETE FROM memo_topics WHERE memo_id=? AND topic_id=?", mid, tid)
             if tid in (d.get("created_topic_ids") or []) and not db.val("SELECT 1 FROM memo_topics WHERE topic_id=?", tid):
@@ -681,6 +733,7 @@ def promote(user, memo_ids, team_space_id, ack=False, dry_run=False, note=None):
         if db.val("SELECT 1 FROM memos WHERE space_id=? AND origin_memo_id=? AND status='active'", team_space_id, mid):
             blocked.append({"memo_id": mid, "reason": "이미 이 팀에 올린 메모입니다."})
             continue
+        m["_replaces"] = stale_team_copies(mid, team_space_id)
         acl = db.js(m["source_acl"], [])
         if acl:
             warnings.append({"memo_id": mid, "level": "ack", "text": f"접근 제한 문서({', '.join(acl)})에서 나온 내용이 들어 있습니다. 팀 전원이 봐도 되는지 확인하세요."})
@@ -691,21 +744,35 @@ def promote(user, memo_ids, team_space_id, ack=False, dry_run=False, note=None):
         items.append(m)
     need_ack = any(w["level"] == "ack" for w in warnings)
     preview = [{"memo_id": m["id"], "body": m["body"], "kind": m["kind"],
-                "topics": [r["title"] for r in db.q("SELECT t.title FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", m["id"])]}
+                "topics": [r["title"] for r in db.q("SELECT t.title FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", m["id"])],
+                "replaces": [{"memo_id": c["id"], "body": db.val("SELECT body FROM memos WHERE id=?", c["id"])} for c in m["_replaces"]]}
                for m in items]
     if dry_run or (need_ack and not ack):
         return {"dry_run": True, "team": sp["name"], "items": preview, "warnings": warnings, "blocked": blocked, "need_ack": need_ack}
     created = []
     for m in items:
         src_topic = db.one("SELECT t.id, t.title FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=? LIMIT 1", m["id"])
+        # 이전 판의 사본이 팀에 있으면 자동 판정(중복·갱신)에 맡기지 않고 그 사본을 대체한다.
+        # 판정에 맡기면 한 단어만 바뀐 새 판이 옛 사본의 '중복'으로 합쳐져 팀에 옛 내용만 남는다.
+        olds = [c["id"] for c in m["_replaces"]]
         res = remember(user, m["body"], space_id=team_space_id, scope=m["scope"], project_key=m["project_key"], kind=m["kind"],
                        source="promoted", trust="high", origin_memo_id=m["id"], source_acl=m["source_acl"],
-                       topic_hint=src_topic["title"] if src_topic else None, origin_topic_id=src_topic["id"] if src_topic else None)
-        db.ex("UPDATE ingest_events SET action='promote' WHERE id=?", res["event_id"])
-        db.audit(user["id"], "promote", "memo", res["memo_id"], team_space_id, origin_memo_id=m["id"], acknowledged=bool(ack and need_ack), note=note)
+                       topic_hint=src_topic["title"] if src_topic else None, origin_topic_id=src_topic["id"] if src_topic else None,
+                       replaces_id=olds[0] if olds else None)
+        extra = olds[1:]   # 예전 동작 탓에 사본이 둘 이상 남아 있던 경우
+        for oid in extra:
+            db.ex("UPDATE memos SET status='superseded', superseded_by=?, updated_at=? WHERE id=? AND status='active'", res["memo_id"], db.now(), oid)
+        ev = db.one("SELECT detail FROM ingest_events WHERE id=?", res["event_id"])
+        d = db.js(ev["detail"], {})
+        d["also_superseded"] = extra
+        db.ex("UPDATE ingest_events SET action='promote', detail=? WHERE id=?", __import__("json").dumps(d, ensure_ascii=False), res["event_id"])
+        db.audit(user["id"], "promote", "memo", res["memo_id"], team_space_id, origin_memo_id=m["id"], replaced=olds,
+                 acknowledged=bool(ack and need_ack), note=note)
         created.append(res)
     return {"dry_run": False, "team": sp["name"], "created": created, "warnings": warnings, "blocked": blocked,
-            "message": f"{sp['name']}에 {len(created)}건을 올렸습니다." + (f" {len(blocked)}건은 올리지 않았습니다." if blocked else "")}
+            "message": f"{sp['name']}에 {len(created)}건을 올렸습니다."
+                       + (f" 그중 {n_rep}건은 팀에 있던 이전 판을 갱신했습니다." if (n_rep := sum(1 for m in items if m['_replaces'])) else "")
+                       + (f" {len(blocked)}건은 올리지 않았습니다." if blocked else "")}
 
 
 def import_text(user, text, project_key=None, source_name=None):

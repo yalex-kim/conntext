@@ -2,7 +2,7 @@
 import {
   memoName,
   api, busy, emit, errorState, fmtDate, fmtNum, html, icon, KIND_LABEL, loading, memoTag, on, openDialog, platformName,
-  projectChip, render, SOURCE_LABEL, STATUS_LABEL, teamSpaces, tierOf, TIER_LABEL, timeAgo, toast, $,
+  projectChip, render, SOURCE_LABEL, state, STATUS_LABEL, teamSpaces, tierOf, TIER_LABEL, timeAgo, toast, $,
 } from './core.js';
 import { showReceipt } from './shell.js';
 
@@ -47,6 +47,13 @@ export async function renderMemoDetail(container, id, opts = {}) {
         ${!active && tier !== 'superseded' ? html`<span class="chip">${STATUS_LABEL[m.status] || m.status}</span>` : ''}
       </header>
       ${tier === 'candidate' && active ? html`<p class="memo__note">${icon('info', 'icon--sm')}<span>세션에서 자동으로 추출했고 아직 확인하지 않은 후보입니다. 확인하기 전에는 에이전트에 지식으로 들어가지 않습니다.</span></p>` : ''}
+      ${m.origin_state ? html`<p class="memo__note memo__note--warn">${icon('alert', 'icon--sm')}<span>${m.origin_state === 'deleted'
+          ? '작성자가 공유한 뒤 원본을 지웠습니다. 이 팀 지식은 더 이상 맞지 않을 수 있습니다.'
+          : '작성자가 공유한 뒤 원본을 고쳤습니다. 이 팀 지식은 낡았을 수 있습니다.'}
+          ${m.author_id === state.me.user.id ? '' : ' 틀렸다면 신고해 주세요.'}</span></p>` : ''}
+      ${active && m.stale_copies?.length ? html`<div class="memo__note memo__note--warn memo__stale">${icon('share', 'icon--sm')}
+          <span>이전 판이 ${[...new Set(m.stale_copies.map((c) => `‘${c.team}’`))].join(', ')}에 공유돼 있고, 팀에는 아직 옛 내용이 남아 있습니다.</span>
+          <button type="button" class="btn btn--sm" data-act="sync-team">팀 사본 갱신</button></div>` : ''}
       ${m.status === 'superseded' && next[0] ? html`<p class="memo__note">${icon('info', 'icon--sm')}<span>이 메모는 ${memoTag(next[0], { href: `#/memos/${next[0].id}`, tier: next[0].status === 'superseded' ? 'superseded' : mine ? 'mine' : 'team' })}가 대체했습니다. 원문은 그대로 보존됩니다.</span></p>` : ''}
       ${editing ? editForm() : html`<div class="memo__body">${m.body}</div>`}
       ${editing ? '' : html`<div class="memo__actions">${actions(tier, active, mine)}</div>`}
@@ -207,6 +214,11 @@ export async function renderMemoDetail(container, id, opts = {}) {
       const ok = await promoteDialog({ memoIds: [m.id] });
       if (ok) opts.onChange?.('promoted', ok);
     });
+    handle('[data-act="sync-team"]', async () => {
+      // 팀 사본 갱신은 다시 공유하는 것과 같다. 미리보기에서 무엇을 바꾸는지 확인하고 올린다.
+      const ok = await promoteDialog({ memoIds: [m.id], teamId: m.stale_copies[0].space_id, title: `${memoName(m)} 팀 사본 갱신`, submitLabel: '팀 사본 갱신' });
+      if (ok) opts.onChange?.('promoted', ok);
+    });
     handle('[data-act="report"]', () => reportDialog(m));
   }
 }
@@ -232,14 +244,14 @@ export function undoAction(eventId, after) {
 
 // ── 팀으로 공유 ─────────────────────────────────────────────────────
 /** 미리보기(dry_run)를 받아 보여 주고, 확인을 받아 올린다. 올렸으면 서버 응답을, 아니면 null을 돌려준다. */
-export async function promoteDialog({ memoIds, topicId, title } = {}) {
+export async function promoteDialog({ memoIds, topicId, title, teamId: preferTeam, submitLabel = '팀으로 공유' } = {}) {
   const teams = teamSpaces();
   if (!teams.length) {
     toast('소속된 팀이 없어 팀으로 공유할 수 없습니다. 팀 관리자에게 초대를 요청하세요.', { tone: 'error' });
     return null;
   }
   let preview = null;
-  let teamId = teams[0].id;
+  let teamId = teams.some((t) => t.id === preferTeam) ? preferTeam : teams[0].id;
   const body = (memoIds ? { memo_ids: memoIds } : { topic_id: topicId });
   const dlg = openDialog({
     title: title || '팀으로 공유',
@@ -247,7 +259,7 @@ export async function promoteDialog({ memoIds, topicId, title } = {}) {
     body: html`<div id="pm-body">${loading('올라갈 내용을 확인하는 중입니다')}</div>`,
     actions: [
       { label: '취소', value: null },
-      { label: '팀으로 공유', kind: 'primary', run: async () => {
+      { label: submitLabel, kind: 'primary', run: async () => {
         const note = dlg.el.querySelector('#pm-note')?.value.trim() || undefined;
         const ack = !!dlg.el.querySelector('#pm-ack')?.checked;
         const res = await api('/api/promote', { method: 'POST', body: { ...body, team_space_id: teamId, ack, note } });
@@ -294,7 +306,8 @@ export async function promoteDialog({ memoIds, topicId, title } = {}) {
         : html`<p class="pm-lead">${p.team}의 구성원 모두가 보게 되고, 구성원의 에이전트에도 팀 지식으로 들어갑니다. 내 공간의 원본은 그대로 남고 팀에는 출처가 붙은 사본이 올라갑니다.</p>`}
       <h3 class="pm-h">올라갈 내용 <span class="num">${p.items.length}</span>건</h3>
       ${p.items.length ? html`<ul class="pm-list">${p.items.map((it) => html`<li>${memoTag({ id: it.memo_id, tier: 'mine' })}
-          <div><p class="pm-body">${it.body}</p>${it.topics.length ? html`<p class="pm-meta">주제: ${it.topics.join(', ')}</p>` : ''}</div></li>`)}</ul>`
+          <div><p class="pm-body">${it.body}</p>${it.topics.length ? html`<p class="pm-meta">주제: ${it.topics.join(', ')}</p>` : ''}
+          ${(it.replaces || []).map((r) => html`<p class="pm-replaces">${icon('refresh', 'icon--sm')}<span>팀에 있던 이전 판을 이 내용으로 바꿉니다: <s>${r.body}</s></span></p>`)}</div></li>`)}</ul>`
         : html`<p class="muted">올릴 수 있는 메모가 없습니다. 아래 이유를 확인하세요.</p>`}
       ${ackW.length ? html`<div class="alert alert--warn" role="alert">${icon('alert')}<div><p class="alert__title">확인이 필요합니다</p>
         <ul>${ackW.map((w) => html`<li>m:${w.memo_id}: ${w.text}</li>`)}</ul></div></div>` : ''}
