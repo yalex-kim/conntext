@@ -217,11 +217,16 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
     def topic_rows(space_filter, sargs, lim):
         cond = "(t.project_key IS NULL OR t.project_key=?)" if project_key else "t.project_key IS NULL"
         # 사람이 확인하지 않은 세션 추출 후보만 있는 주제는 색인에 넣지 않는다.
-        return db.q(f"SELECT t.id, t.title, t.project_key, COUNT(mt.memo_id) AS n, MAX(m.created_at) AS last, "
-                    f"(SELECT x.body FROM memos x JOIN memo_topics xt ON xt.memo_id=x.id WHERE xt.topic_id=t.id AND x.status='active' AND x.trust!='low' ORDER BY x.created_at DESC LIMIT 1) AS latest "
+        # 순서: 이 저장소의 주제 → 최근 30일 동안 에이전트가 꺼내 쓴 횟수 → 최근 변경.
+        # 예산을 넘으면 뒤에서부터 잘리므로, 자주 쓰이는 지식이 남는다.
+        since = db.now() - 30 * 86400
+        return db.q(f"SELECT t.id, t.title, t.project_key, COUNT(DISTINCT mt.memo_id) AS n, MAX(m.created_at) AS last, "
+                    f"(SELECT COUNT(*) FROM memo_uses u JOIN memo_topics ut ON ut.memo_id=u.memo_id "
+                    f" WHERE ut.topic_id=t.id AND u.kind IN ('recall','used') AND u.created_at>=?) AS uses "
                     f"FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id JOIN memos m ON m.id=mt.memo_id AND m.status='active' AND m.trust!='low' "
-                    f"WHERE {space_filter} AND {cond} GROUP BY t.id ORDER BY (t.project_key IS NOT NULL) DESC, last DESC LIMIT ?",
-                    *sargs, *((project_key,) if project_key else ()), lim)
+                    f"WHERE {space_filter} AND {cond} GROUP BY t.id "
+                    f"ORDER BY (t.project_key IS NOT NULL) DESC, uses DESC, last DESC LIMIT ?",
+                    since, *sargs, *((project_key,) if project_key else ()), lim)
     mine = topic_rows("t.space_id=?", (pid,), pol["max_topics"])
     if mine:
         sections.append({"key": "topics", "title": "내 지식 색인", "tier": "mine",
@@ -232,7 +237,7 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
             sections.append({"key": "team_topics", "title": "팀 지식 색인", "tier": "team",
                              "items": [{"topic_id": t["id"], "text": _topic_line(t), "tag": f"메모 {t['n']}건"} for t in tt]})
 
-    head = "# Conntext\n이 사용자가 쌓아 둔 맥락이다. 색인의 주제는 제목만 실었으니, 관련 작업을 할 때 conntext의 `recall` 도구로 본문을 꺼내 쓴다.\n"
+    head = "# Conntext\n이 사용자가 쌓아 둔 맥락이다. 지식 색인에는 주제 제목만 실었다. 지금 작업과 관련 있어 보이는 주제가 있으면 conntext의 `recall` 도구로 찾거나 `get_topic`에 [t:번호]를 넣어 본문을 꺼내 쓴다.\n"
     foot = "\n메모를 답에 썼으면 `mark_used`로 알린다. 사용자가 틀렸다고 하면 `remember`로 고친 내용을 저장한다.\n"
     used = est_tokens(head) + est_tokens(foot)
     kept = []
@@ -277,8 +282,9 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
 
 
 def _topic_line(t):
-    s = re.sub(r"\s+", " ", (t.get("latest") or "").replace("`", "")).strip()
-    return t["title"] + (f" — {s[:64]}" + ("…" if len(s) > 64 else "") if s else "")
+    """색인 줄은 주제 제목만 쓴다. 본문은 에이전트가 관련 있을 때 recall·get_topic으로 꺼낸다.
+    본문 발췌를 붙이면 메모가 짧을 때 거의 본문 전체가 되어, 색인이 본문만큼 예산을 쓴다."""
+    return t["title"]
 
 
 def _line(it):

@@ -270,7 +270,7 @@ curl -s -X PUT  $S/api/admin/teams/<팀 id>/members -H "$H" -H 'Content-Type: ap
 | `masking_rules` | 마스킹 정규식 목록(`{name, pattern}`) |
 | `capture` | `platforms`, `excluded_projects`(부분 문자열 일치), `max_transcript_chars` 400000 |
 | `retention` | 대화록 30일, 쓰이지 않은 후보 30일, 진행 상태 14일, 후보 자동 승격 사용 횟수 2 |
-| `injection` | 세션 시작 맥락 토큰 예산 1500, 지시 최대 12개, 주제 최대 10개 |
+| `injection` | 세션 시작 맥락 토큰 예산 1500, 지시 최대 12개, 주제 최대 40개(색인은 제목만 넣으므로 보통 예산이 먼저 개수를 정한다) |
 | `budget` | 사용자별 최근 24시간 LLM 토큰 400000. 넘으면 규칙 기반으로 처리 |
 | `clients` | 최소 플러그인 버전 |
 

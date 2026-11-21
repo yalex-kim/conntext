@@ -631,7 +631,7 @@ const PFORMS = [
   { key: 'injection', title: '주입', meta: '세션을 시작할 때 에이전트에 넣는 양입니다.', fields: [
     { k: 'token_budget', label: '토큰 예산', unit: '토큰', min: 100, step: 100, hint: '늘리면 맥락이 많아지는 대신 모든 세션의 첫 요청이 그만큼 길어집니다. 넘는 항목은 빠집니다.' },
     { k: 'max_instructions', label: '지시·선호 최대 수', unit: '개', min: 0, hint: '항상 적용되는 지시·선호를 몇 개까지 넣을지 정합니다.' },
-    { k: 'max_topics', label: '주제 색인 최대 수', unit: '개', min: 0, hint: '내 주제 문서 색인 개수입니다. 팀 주제는 이 값의 절반(최소 3)까지 넣습니다.' },
+    { k: 'max_topics', label: '주제 색인 최대 수', unit: '개', min: 0, hint: '색인에 넣을 내 주제 수의 상한입니다. 색인은 제목만 넣으므로 보통은 토큰 예산이 먼저 개수를 정합니다. 팀 주제는 이 값의 절반(최소 3)까지 넣습니다.' },
   ] },
   { key: 'budget', title: 'LLM 예산', meta: '분석·추출·주제 문서 생성에 쓰는 LLM 토큰입니다.', fields: [
     { k: 'daily_tokens_per_user', label: '사용자당 하루 토큰', unit: '토큰', min: 0, step: 1000, hint: '사용자 한 명이 최근 24시간 동안 쓸 수 있는 LLM 토큰입니다. 사용자별 한도가 있으면 그것이 먼저입니다. 0이면 제한하지 않습니다.' },
