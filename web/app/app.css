@@ -587,3 +587,10 @@ button.cite:hover { filter: brightness(0.95); }
 @media (max-width: 1023px) {
   .filters:has(+ .split.is-detail) { display: none; }
 }
+
+/* 팀 사본이 낡았을 때(#8) */
+.memo__note--warn { color: var(--warn-ink); background: var(--warn-soft); border-radius: var(--r-2); padding: var(--s-2) var(--s-3); }
+.memo__stale { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.memo__stale > span { flex: 1 1 16rem; }
+.pm-replaces { display: flex; gap: 6px; align-items: flex-start; margin: var(--s-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
+.pm-replaces s { color: var(--ink-2); }

@@ -21,6 +21,7 @@ TOOLS = [
     {"name": "recall",
      "description": "사용자의 개인 공간과 소속 팀 공간에서 관련 메모를 찾는다. 작업에 필요한 배경, 결정, 규칙이 있을 것 같을 때나 /recall에 쓴다. "
                     "결과에는 등급이 붙는다: [내 메모]는 사용자가 직접 적은 것, [팀 지식]은 동료가 공유한 것, [세션 자동 추출·미확인]은 사람이 확인하지 않은 것이다. "
+                    "[팀 지식 · … · 원본이 바뀜/삭제됨]은 작성자가 공유한 뒤 원본을 고치거나 지운 것이라 낡았을 수 있다. "
                     "미확인 내용을 근거로 쓸 때는 미확인임을 사용자에게 밝힌다.",
      "inputSchema": {"type": "object", "properties": {
          "query": {"type": "string", "description": "찾을 내용. 자연어 문장이나 핵심 단어."},
@@ -74,7 +75,8 @@ def _date(ts):
 def fmt_memo(r):
     tier = r["tier"]
     if tier == "team":
-        tag = f"[팀 지식 · {r['author']}]"
+        note = {"changed": " · 원본이 바뀜", "deleted": " · 원본이 삭제됨"}.get(r.get("origin_state"), "")
+        tag = f"[팀 지식 · {r['author']}{note}]"
     elif tier == "candidate":
         tag = "[세션 자동 추출·미확인]"
     elif tier == "state":

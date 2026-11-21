@@ -513,6 +513,93 @@ class TestTitle(Base):
         self.assertEqual(db.val("SELECT title FROM memos_fts WHERE rowid=?", a), body)
 
 
+class TestTeamCopy(Base):
+    """원본을 고치면 팀 사본이 낡았다는 것을 알리고, 다시 공유하면 옛 사본을 대체한다(이슈 #8)."""
+
+    def share_then_edit(self):
+        old = pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능")["memo_id"]
+        copy = pipeline.promote(self.alice, [old], self.team)["created"][0]["memo_id"]
+        res = pipeline.remember(self.alice, "스테이징 배포는 금요일 오전만 가능", replaces_id=old)
+        return old, copy, res
+
+    def active_in_team(self):
+        return [r["id"] for r in db.q("SELECT id FROM memos WHERE space_id=? AND status='active'", self.team)]
+
+    def test_editing_shared_memo_tells_about_stale_copy(self):
+        old, copy, res = self.share_then_edit()
+        self.assertIn("팀 ‘팀’에 공유된 이전 판이 그대로 있습니다", res["message"])
+        self.assertEqual([c["id"] for c in pipeline.stale_team_copies(res["memo_id"])], [copy])
+        # 공유하지 않은 메모를 고칠 때는 안내가 없다
+        a = pipeline.remember(self.alice, "헬스체크 포트는 9102")["memo_id"]
+        r = pipeline.remember(self.alice, "헬스체크 포트는 9103", replaces_id=a)
+        self.assertNotIn("팀 ‘", r["message"])
+
+    def test_resharing_replaces_old_copy(self):
+        old, copy, res = self.share_then_edit()
+        pv = pipeline.promote(self.alice, [res["memo_id"]], self.team, dry_run=True)
+        self.assertEqual([r["memo_id"] for r in pv["items"][0]["replaces"]], [copy])
+        out = pipeline.promote(self.alice, [res["memo_id"]], self.team)
+        self.assertIn("이전 판을 갱신했습니다", out["message"])
+        new_copy = out["created"][0]["memo_id"]
+        self.assertEqual(self.memo(copy)["status"], "superseded")
+        self.assertEqual(self.active_in_team(), [new_copy])
+        hits = retrieval.search(access.space_ids(self.bob["id"]), "스테이징 배포 요일")
+        self.assertEqual([h["body"] for h in hits if h["space_kind"] == "team"], ["스테이징 배포는 금요일 오전만 가능"])
+        self.assertEqual(pipeline.stale_team_copies(res["memo_id"]), [])
+        # 되돌리면 옛 사본이 돌아온다
+        pipeline.undo(self.alice, out["created"][0]["event_id"])
+        self.assertEqual(self.active_in_team(), [copy])
+
+    def test_resharing_with_one_word_change_is_not_merged_as_duplicate(self):
+        # 자동 판정에 맡기면 한 단어만 바뀐 새 판이 옛 사본의 '중복'으로 합쳐져 팀에 옛 내용만 남았다.
+        old, copy, res = self.share_then_edit()
+        new_copy = pipeline.promote(self.alice, [res["memo_id"]], self.team)["created"][0]["memo_id"]
+        self.assertEqual(self.memo(new_copy)["status"], "active")
+        self.assertEqual(self.memo(new_copy)["body"], "스테이징 배포는 금요일 오전만 가능")
+
+    def test_resharing_supersedes_all_leftover_copies(self):
+        old, copy, res = self.share_then_edit()
+        mid = pipeline.remember(self.alice, "스테이징 배포는 토요일 오전만 가능", replaces_id=res["memo_id"])["memo_id"]
+        # 예전 동작으로 남은 두 번째 사본(중간 판의 사본)을 흉내 낸다
+        extra = pipeline.remember(self.alice, "스테이징 배포는 금요일 오전만 가능", space_id=self.team, source="promoted",
+                                  origin_memo_id=res["memo_id"], do_analyze=False)["memo_id"]
+        out = pipeline.promote(self.alice, [mid], self.team)
+        self.assertEqual(self.active_in_team(), [out["created"][0]["memo_id"]])
+        pipeline.undo(self.alice, out["created"][0]["event_id"])
+        self.assertEqual(sorted(self.active_in_team()), sorted([copy, extra]))
+
+    def test_stale_copy_is_marked_for_teammates_and_hidden_for_author(self):
+        old, copy, res = self.share_then_edit()
+        bob = retrieval.recall(self.bob, "스테이징 배포 요일", log=False)["results"]
+        self.assertEqual([(r["id"], r["origin_state"]) for r in bob], [(copy, "changed")])
+        self.assertIn("원본이 바뀜", mcp.fmt_memo(bob[0]))
+        alice = retrieval.recall(self.alice, "스테이징 배포 요일", log=False)["results"]
+        self.assertEqual([r["id"] for r in alice], [res["memo_id"]])
+
+    def test_stale_copy_ranks_lower(self):
+        # 원본이 바뀐 사본은 낡았을 수 있어 같은 검색에서 점수를 한 단계(×0.8) 낮춘다.
+        old = pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능")["memo_id"]
+        copy = pipeline.promote(self.alice, [old], self.team)["created"][0]["memo_id"]
+        score = lambda: [h for h in retrieval.search(access.space_ids(self.bob["id"]), "스테이징 배포 요일") if h["id"] == copy][0]["score"]
+        before = score()
+        pipeline.remember(self.alice, "스테이징 배포는 금요일 오전만 가능", replaces_id=old)
+        self.assertAlmostEqual(score(), round(before * 0.8, 4), places=3)
+
+    def test_deleted_origin_marks_copy_but_keeps_it(self):
+        old = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저")["memo_id"]
+        copy = pipeline.promote(self.alice, [old], self.team)["created"][0]["memo_id"]
+        pipeline.forget(self.alice, old)
+        self.assertEqual(self.memo(copy)["status"], "active")
+        hit = [r for r in retrieval.recall(self.bob, "게이트웨이 재시작 순서", log=False)["results"] if r["id"] == copy][0]
+        self.assertEqual(hit["origin_state"], "deleted")
+        self.assertIn("원본이 삭제됨", mcp.fmt_memo(hit))
+
+    def test_unchanged_copy_has_no_marker(self):
+        old = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저")["memo_id"]
+        copy = pipeline.promote(self.alice, [old], self.team)["created"][0]["memo_id"]
+        self.assertIsNone(pipeline.origin_state({**self.memo(copy), "space_kind": "team"}))
+
+
 class TestSessions(Base):
     JSONL = "\n".join(json.dumps(x, ensure_ascii=False) for x in [
         {"type": "user", "message": {"role": "user", "content": "토큰 갱신 테스트 실패 원인 찾아줘"}},
@@ -960,6 +1047,20 @@ class TestHTTP(Base):
         self.assertEqual(self.call("POST", f"/api/reports/{rep['id']}/resolve", {"action": "remove"})[0], 403)      # 앨리스는 팀 관리자가 아니다
         self.assertEqual(self.call("POST", f"/api/reports/{rep['id']}/resolve", {"action": "remove"}, tok="bob")[0], 200)
         self.assertEqual(self.memo(tm)["status"], "deleted")
+
+    def test_memo_api_exposes_stale_copies_to_author_only(self):
+        _, r = self.call("POST", "/api/memos", {"text": "스테이징 배포는 목요일 오전만 가능"})
+        old = r["memo_id"]
+        copy = pipeline.promote(self.alice, [old], self.team)["created"][0]["memo_id"]
+        _, r = self.call("PUT", f"/api/memos/{old}", {"text": "스테이징 배포는 금요일 오전만 가능"})
+        new = r["memo_id"]
+        _, d = self.call("GET", f"/api/memos/{new}")
+        self.assertEqual([c["id"] for c in d["stale_copies"]], [copy])
+        _, d = self.call("GET", f"/api/memos/{copy}", tok="bob")
+        self.assertEqual(d["origin_state"], "changed")
+        self.assertEqual(d["stale_copies"], [])
+        _, lst = self.call("GET", f"/api/memos?space_id={self.team}", tok="bob")
+        self.assertEqual([m["origin_state"] for m in lst["memos"] if m["id"] == copy], ["changed"])
 
     def test_policy_validation(self):
         code, r = self.call("PUT", "/api/admin/policies/masking_rules", {"value": [{"name": "깨진 규칙", "pattern": "([a-z"}]}, tok="op")

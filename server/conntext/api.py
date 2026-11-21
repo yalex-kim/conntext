@@ -71,6 +71,7 @@ def memo_rows(where, *args, limit=200, order="m.created_at DESC"):
 
 def decorate(m):
     m["tier"] = retrieval.tier_of(m, m["space_kind"])
+    m["origin_state"] = pipeline.origin_state(m) if m["space_kind"] == "team" else None
     m["project"] = pipeline.short_project(m["project_key"])
     m["source_acl"] = db.js(m["source_acl"], [])
     m["topics"] = db.q("SELECT t.id, t.title FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", m["id"])
@@ -332,6 +333,8 @@ def memo_get(req, mid):
     out["uses"] = {r["kind"]: r["n"] for r in db.q("SELECT kind, COUNT(*) AS n FROM memo_uses WHERE memo_id=? GROUP BY kind", m["id"])}
     out["origin"] = db.one("SELECT m.id, s.name AS space FROM memos m JOIN spaces s ON s.id=m.space_id WHERE m.id=?", m["origin_memo_id"]) if m["origin_memo_id"] and m["author_id"] == req.user["id"] else None
     out["shared_to"] = db.q("SELECT m.id, s.name AS team, s.id AS space_id FROM memos m JOIN spaces s ON s.id=m.space_id WHERE m.origin_memo_id=? AND m.status='active'", m["id"])
+    # 이 메모의 이전 판을 공유해 둔 팀 사본(아직 옛 내용). 작성자에게만 갱신 길을 보여 준다.
+    out["stale_copies"] = pipeline.stale_team_copies(m["id"]) if m["author_id"] == req.user["id"] and m["status"] == "active" and out["space_kind"] == "personal" else []
     se = db.one("SELECT id, platform, summary, started_at FROM sessions WHERE id=? AND user_id=?", m["origin_session_id"], req.user["id"]) if m["origin_session_id"] else None
     out["session"] = se
     out["can_edit"] = m["author_id"] == req.user["id"] or access.role_in(req.user["id"], m["space_id"]) == "admin"
