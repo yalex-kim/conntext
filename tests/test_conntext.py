@@ -399,6 +399,39 @@ class TestScopeAndInjection(Base):
         self.assertLessEqual(ctx["tokens"], 400)
         self.assertGreater(ctx["sections"][0]["dropped"], 0)
 
+    def test_topic_index_is_titles_only(self):
+        pipeline.remember(self.alice, "OTA 청크 크기는 MTU 247 기준 244바이트. 협상 실패 시 20바이트로 떨어진다", project_key=GW)
+        ctx = retrieval.build_context(self.alice, GW, log=False)
+        idx = [s for s in ctx["sections"] if s["key"] == "topics"][0]
+        self.assertTrue(idx["items"])
+        self.assertNotIn("244바이트", ctx["text"])          # 본문은 색인에 들어가지 않는다
+        self.assertIn(f"[t:{idx['items'][0]['topic_id']}]", ctx["text"])
+
+    def test_many_topics_fit_within_budget(self):
+        words = ["게이트웨이", "OTA", "본딩", "스캔", "채널맵", "RSSI", "HCI", "GATT", "MTU", "펌웨어"]
+        for i in range(30):
+            pipeline.remember(self.alice, f"{words[i % 10]}{i}번 설정은 값 {i}을 쓴다. 이유는 현장 측정 결과다", do_analyze=False)
+        jobs.drain()
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        idx = [s for s in ctx["sections"] if s["key"] == "topics"][0]
+        self.assertEqual(len(idx["items"]), 30)            # 예전에는 10개에서 잘렸다
+        self.assertLessEqual(ctx["tokens"], ctx["budget"])
+
+    def test_overflow_keeps_frequently_used_topics(self):
+        ids = []
+        for i in range(12):
+            ids.append(pipeline.remember(self.alice, f"주제{i:02d} 관련 결정은 값 {i}을 쓰는 것이다", do_analyze=False)["memo_id"])
+        db.set_policy("injection", {"token_budget": 1500, "max_instructions": 12, "max_topics": 3})
+        old = ids[0]                                        # 가장 먼저 만든 주제(최근 순으로는 맨 뒤)
+        db.ex("UPDATE memos SET created_at=? WHERE id=?", db.now() - 20 * 86400, old)
+        for _ in range(3):
+            retrieval.mark_used(self.alice, [old])
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        kept = [it["topic_id"] for s in ctx["sections"] if s["key"] == "topics" for it in s["items"]]
+        old_topic = db.val("SELECT topic_id FROM memo_topics WHERE memo_id=?", old)
+        self.assertEqual(len(kept), 3)
+        self.assertEqual(kept[0], old_topic)
+
     def test_empty_space_injects_nothing(self):
         self.assertEqual(retrieval.build_context(self.bob, GW, log=False)["text"], "")
 
