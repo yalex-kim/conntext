@@ -65,14 +65,16 @@ export const Conntext = async ({ client, directory }) => {
     for (const m of res?.data || []) {
       const text = []
       const tools = []
+      const errors = []   // 실패한 도구의 오류 출력만 보낸다. 성공한 결과와 파일 내용은 보내지 않는다.
       for (const part of m.parts || []) {
         if (part.type === "text" && !part.synthetic && part.text) text.push(part.text)
         if (part.type === "tool") {
           const i = part.state?.input || {}
           tools.push(`${part.tool}: ${String(i.command || i.filePath || i.pattern || i.description || "").slice(0, 120)}`)
+          if (part.state?.status === "error" && part.state.error) errors.push(String(part.state.error).slice(0, 8000))
         }
       }
-      if (text.length || tools.length) messages.push({ role: m.info?.role === "user" ? "user" : "assistant", text: text.join("\n"), tools })
+      if (text.length || tools.length) messages.push({ role: m.info?.role === "user" ? "user" : "assistant", text: text.join("\n"), tools, errors })
     }
     if (!messages.length) return false
     await mkdir(PENDING, { recursive: true })

@@ -633,6 +633,128 @@ class TestTeamCopy(Base):
         self.assertIsNone(pipeline.origin_state({**self.memo(copy), "space_kind": "team"}))
 
 
+class TestSessionSearch(Base):
+    """에이전트가 본인의 지난 세션 대화록을 찾고 읽는다(이슈 #14)."""
+
+    TX = "\n".join(json.dumps(x, ensure_ascii=False) for x in [
+        {"type": "user", "message": {"role": "user", "content": "broker ACL 캐시 때문에 publish가 거부되는 것 같아"}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "acl_cache.py의 TTL을 확인하겠습니다."},
+            {"type": "tool_use", "name": "Bash", "input": {"command": "pytest tests/broker -q"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "is_error": True, "content": "FAILED tests/broker/test_acl.py::test_refresh - AssertionError: ttl 300 != 30\n" + "\n".join(f"trace line {i}" for i in range(40))},
+            {"type": "tool_result", "content": "SECRET FILE CONTENT password=hunter2hunter2"}]}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "TTL을 30초로 줄여서 해결했습니다. 배포 전에 QA 채널에 알려야 합니다."}]}},
+    ])
+
+    def up(self, user, ext, tx=None, project=GW, days_ago=0):
+        r = sessions.upload(user, "claude-code", ext, project, transcript=tx or self.TX)
+        if days_ago:
+            ts = db.now() - days_ago * 86400
+            db.ex("UPDATE sessions SET started_at=?, ended_at=? WHERE id=?", ts, ts, r["session_id"])
+        return r["session_id"]
+
+    def test_error_output_is_kept_but_file_contents_are_not(self):
+        sid = self.up(self.alice, "s1")
+        tx = db.val("SELECT transcript FROM sessions WHERE id=?", sid)
+        self.assertIn("[오류] FAILED tests/broker/test_acl.py::test_refresh - AssertionError: ttl 300 != 30", tx)
+        self.assertNotIn("hunter2", tx)
+        self.assertEqual(tx.count("[오류] trace line"), sessions.ERROR_LINES - 1)
+        self.assertIn("줄 생략", tx)
+
+    def test_error_output_is_masked(self):
+        tx = json.dumps({"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "is_error": True, "content": "auth failed: token=ghp_abcdefghijklmnopqrstuvwxyz0123456789"}]}})
+        sid = self.up(self.alice, "s-mask", tx=tx)
+        self.assertNotIn("ghp_abcdef", db.val("SELECT transcript FROM sessions WHERE id=?", sid))
+
+    def test_opencode_errors_are_kept(self):
+        r = sessions.upload(self.alice, "opencode", "oc1", GW, messages=[
+            {"role": "assistant", "text": "테스트를 돌립니다", "tools": ["bash: pytest"], "errors": ["E   ImportError: cannot import name 'Verifier'"]}])
+        self.assertIn("[오류] E   ImportError", db.val("SELECT transcript FROM sessions WHERE id=?", r["session_id"]))
+
+    def test_search_finds_lines_with_context_in_own_sessions_only(self):
+        mine = self.up(self.alice, "s1")
+        self.up(self.bob, "s2")
+        hits = sessions.search_sessions(self.alice, "acl_cache TTL")
+        self.assertEqual([h["session"]["id"] for h in hits], [mine])
+        text = mcp.fmt_search_sessions(self.alice, {"query": "acl_cache TTL"})
+        self.assertIn(f"s:{mine}", text)
+        self.assertIn("acl_cache.py의 TTL", text)
+        self.assertIn("L1 사용자: broker ACL", text)          # 앞뒤 줄
+        self.assertEqual(sessions.search_sessions(self.bob, "존재하지않는단어zz"), [])
+
+    def test_two_letter_korean_words_are_found(self):
+        self.up(self.alice, "s1")
+        self.assertTrue(sessions.search_sessions(self.alice, "배포"))
+
+    def test_error_text_is_searchable(self):
+        self.up(self.alice, "s1")
+        text = mcp.fmt_search_sessions(self.alice, {"query": "AssertionError ttl"})
+        self.assertIn("[오류] FAILED", text)
+
+    def test_period_filters(self):
+        old = self.up(self.alice, "old", days_ago=20)
+        new = self.up(self.alice, "new", days_ago=1)
+        ids = lambda **k: [h["session"]["id"] for h in sessions.search_sessions(self.alice, "acl_cache", **k)]
+        self.assertEqual(ids(after=sessions.parse_when("7d")), [new])
+        self.assertEqual(ids(before=sessions.parse_when("7d")), [old])
+        self.assertEqual(ids(sort="oldest"), [old, new])
+        with self.assertRaises(BadRequest):
+            sessions.parse_when("지난주")
+
+    def test_excluded_and_expired_sessions_are_not_searchable(self):
+        db.update("users", self.alice["id"], capture_paused=1)
+        paused = db.one("SELECT * FROM users WHERE id=?", self.alice["id"])
+        sessions.upload(paused, "claude-code", "off", GW, transcript=self.TX)
+        self.assertEqual(sessions.search_sessions(paused, "acl_cache"), [])
+        db.update("users", self.alice["id"], capture_paused=0)
+        sid = self.up(self.alice, "s1", days_ago=100)
+        self.assertTrue(sessions.search_sessions(self.alice, "acl_cache"))
+        sessions.maintenance()                                  # 90일이 지난 대화록은 지운다
+        self.assertEqual(sessions.search_sessions(self.alice, "acl_cache"), [])
+        self.assertEqual(db.val("SELECT COUNT(*) FROM session_lines WHERE session_id=?", sid), 0)
+        with self.assertRaises(access.NotFound):
+            sessions.read_session(self.alice, sid)
+
+    def test_default_retention_is_90_days(self):
+        self.assertEqual(db.policy("retention")["transcript_days"], 90)
+        self.up(self.alice, "s1", days_ago=60)
+        sessions.maintenance()
+        self.assertTrue(sessions.search_sessions(self.alice, "acl_cache"))
+
+    def test_read_range_and_other_users_session(self):
+        sid = self.up(self.alice, "s1")
+        text = mcp.fmt_search_sessions(self.alice, {"session_id": sid, "from_line": 2, "to_line": 3})
+        self.assertIn("L2 ", text)
+        self.assertNotIn("L1 ", text)
+        self.assertNotIn("L4 ", text)
+        with self.assertRaises(access.NotFound):
+            mcp.fmt_search_sessions(self.bob, {"session_id": sid})
+
+    def test_browse_recent(self):
+        self.up(self.alice, "s1")
+        self.assertIn("최근 세션", mcp.fmt_search_sessions(self.alice, {}))
+        self.assertIn("검색할 수 있는 지난 세션이 없습니다", mcp.fmt_search_sessions(self.bob, {}))
+
+    def test_result_is_capped(self):
+        big = "\n".join(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": f"watchdog 타이머 기록 {i} " + "가" * 300}]}}) for i in range(60))
+        for i in range(5):
+            self.up(self.alice, f"big{i}", tx=big)
+        text = mcp.fmt_search_sessions(self.alice, {"query": "watchdog 타이머", "limit": 10})
+        self.assertLessEqual(len(text), sessions.RESULT_CHARS + 600)
+        self.assertIn("생략", text)
+
+    def test_index_cleanup_on_delete_and_backfill(self):
+        sid = self.up(self.alice, "s1")
+        db.ex("DELETE FROM session_lines")                        # 이 기능 이전에 올라온 대화록을 흉내 낸다
+        self.assertEqual(sessions.search_sessions(self.alice, "acl_cache"), [])
+        sessions.maintenance()
+        self.assertTrue(sessions.search_sessions(self.alice, "acl_cache"))
+        admin.delete_personal_data(self.alice["id"])
+        self.assertEqual(db.val("SELECT COUNT(*) FROM session_lines"), 0)
+
+
 class TestSessions(Base):
     JSONL = "\n".join(json.dumps(x, ensure_ascii=False) for x in [
         {"type": "user", "message": {"role": "user", "content": "토큰 갱신 테스트 실패 원인 찾아줘"}},
@@ -923,7 +1045,7 @@ class TestHTTP(Base):
         self.assertEqual(code, 202)
         _, r = self.rpc("tools/list")
         names = {t["name"] for t in r["result"]["tools"]}
-        self.assertEqual(names, {"remember", "recall", "get_memos", "get_topic", "resume", "handoff", "forget", "mark_used"})
+        self.assertEqual(names, {"remember", "recall", "search_sessions", "get_memos", "get_topic", "resume", "handoff", "forget", "mark_used"})
         _, r = self.rpc("nope/nope")
         self.assertEqual(r["error"]["code"], -32601)
 
@@ -1094,6 +1216,23 @@ class TestHTTP(Base):
         self.assertEqual(d["stale_copies"], [])
         _, lst = self.call("GET", f"/api/memos?space_id={self.team}", tok="bob")
         self.assertEqual([m["origin_state"] for m in lst["memos"] if m["id"] == copy], ["changed"])
+
+    def test_mark_used_accepts_common_argument_mistakes(self):
+        a = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저")["memo_id"]
+        for args in ({"memo_ids": [a]}, {"ids": f"[{a}]"}, {"memo_ids": f"m:{a}"}, {"memo_ids": [str(a)]}, {"memo_id": a}):
+            r = self.tool("mark_used", args)
+            self.assertIn("사용 기록 1건", r["content"][0]["text"], args)
+
+    def test_mcp_search_sessions_and_session_delete_clears_index(self):
+        self.call("POST", "/api/hooks/session-upload", {"platform": "claude-code", "session_id": "cc-x", "project": GW, "transcript": TestSessionSearch.TX})
+        r = self.tool("search_sessions", {"query": "acl_cache TTL"})
+        self.assertFalse(r["isError"])
+        self.assertIn("acl_cache.py의 TTL", r["content"][0]["text"])
+        self.assertTrue(self.tool("search_sessions", {"after": "지난주", "query": "x"})["isError"])
+        self.assertIn("없습니다", self.tool("search_sessions", {"query": "acl_cache"}, tok="bob")["content"][0]["text"])
+        sid = db.val("SELECT id FROM sessions WHERE ext_id='cc-x'")
+        self.assertEqual(self.call("DELETE", f"/api/sessions/{sid}")[0], 200)
+        self.assertEqual(db.val("SELECT COUNT(*) FROM session_lines"), 0)
 
     def test_policy_validation(self):
         code, r = self.call("PUT", "/api/admin/policies/masking_rules", {"value": [{"name": "깨진 규칙", "pattern": "([a-z"}]}, tok="op")

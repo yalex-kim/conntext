@@ -533,6 +533,7 @@ def session_delete(req, sid):
     for m in db.q("SELECT id FROM memos WHERE origin_session_id=? AND (trust!='high') AND status='active'", s["id"]):
         db.ex("UPDATE memos SET status='deleted', updated_at=? WHERE id=?", db.now(), m["id"])
     db.ex("UPDATE memos SET origin_session_id=NULL WHERE origin_session_id=?", s["id"])
+    sessions.drop_lines(s["id"])
     db.ex("DELETE FROM sessions WHERE id=?", s["id"])
     db.audit(req.user["id"], "session_delete", "session", s["id"])
     return {"ok": True}
