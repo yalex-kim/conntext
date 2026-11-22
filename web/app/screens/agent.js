@@ -88,7 +88,9 @@ async function agentScreen(root, ctx) {
             <span class="aitems__ref">${it.memo_id ? memoTag({ id: it.memo_id, tier, author: s.key === 'team_instructions' ? it.tag : null }, { href: `#/memos/${it.memo_id}`, by: false })
               : html`<a class="chip chip--mono" href="#/wiki/${it.topic_id}" title="주제 문서">t:${it.topic_id}</a>`}</span>
             <span class="aitems__text">${it.text}${it.tag ? html` <span class="muted">(${it.tag})</span>` : ''}</span>
-            <span class="aitems__tok num">${fmtNum(it.tokens)}</span></li>`)}</ul>` : html`<p class="quiet-line">예산이 남지 않아 이 구역은 통째로 빠졌습니다.</p>`}
+            <span class="aitems__tok num">${fmtNum(it.tokens)}</span></li>`)}</ul>`
+            : s.over_limit ? html`<p class="quiet-line warn-text">지시·선호 ${s.over_limit}개가 모두 상한(개수 또는 글자)에 들어가지 않아 빠졌습니다. 비슷한 지시를 합치거나 긴 지시를 줄이세요.</p>`
+            : html`<p class="quiet-line">예산이 남지 않아 이 구역은 통째로 빠졌습니다.</p>`}
         </section>`;
       })}</div>
       ${empty ? '' : html`<details class="rawtext">
@@ -175,7 +177,9 @@ function drawFrame(frame, d, secs, overhead) {
   }
   const free = Math.max(0, d.budget - x);
   const absent = FIELDS.filter((f) => !secs.has(f.key));
-  const starved = FIELDS.filter((f) => secs.has(f.key) && !secs.get(f.key).tokens);
+  // 예산이 모자라 빠진 구역과, 지시 상한(개수·글자) 때문에 빠진 구역은 이유가 달라 따로 적는다.
+  const starved = FIELDS.filter((f) => secs.has(f.key) && !secs.get(f.key).tokens && !secs.get(f.key).over_limit);
+  const capped = FIELDS.filter((f) => secs.has(f.key) && !secs.get(f.key).tokens && secs.get(f.key).over_limit);
   // 눈금
   const steps = [50, 100, 250, 500, 1000, 2000];
   const maxTicks = W < 520 ? 4 : 8;
@@ -231,6 +235,7 @@ function drawFrame(frame, d, secs, overhead) {
       </div>`
       : html`<ol class="ff__legend">${drawn.map((f) => html`<li><span class="swatch ${f.cls}" aria-hidden="true"><span class="num">${f.no}</span></span><span>${labelOf(f)}</span></li>`)}</ol>`
     : ''}
+    ${capped.length ? html`<p class="ff__absent warn-text">상한에 들어가지 않아 모두 빠진 구역: ${capped.map((f, i) => html`${i ? ', ' : ''}${f.name} ${secs.get(f.key).over_limit}개`)}</p>` : ''}
     ${starved.length ? html`<p class="ff__absent warn-text">예산이 모자라 통째로 빠진 구역: ${starved.map((f, i) => html`${i ? ', ' : ''}${f.name} ${secs.get(f.key).dropped}개`)}</p>` : ''}
     ${absent.length ? html`<p class="ff__absent">비어 있는 구역: ${absent.map((f, i) => html`${i ? ', ' : ''}${f.name}`)}${secs.has('state') || !d.project_key ? '' : ' (이 저장소에 남은 진행 상태가 없습니다)'}${!d.project_key ? ' · 저장소 밖에서는 진행 상태와 저장소 범위 지식이 들어가지 않습니다' : ''}</p>` : ''}`);
 }

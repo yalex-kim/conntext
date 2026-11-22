@@ -1336,6 +1336,16 @@ class TestHTTP(Base):
         self.assertEqual(d["instruction_usage"]["limit"], 1200)
         self.assertEqual(d["instruction_usage"]["chars"], len("답변은 한국어로 해 줘"))
 
+    def test_preview_keeps_instruction_section_when_all_dropped(self):
+        # 리뷰(PR #21): 지시가 모두 빠지면 구역이 응답에서 사라져, 화면이 이유를 보여 주지 못했다.
+        pipeline.remember(self.alice, "아주 긴 지시: " + "가" * 80, kind="instruction", do_analyze=False)
+        db.set_policy("injection", {"instruction_chars": 50})
+        _, d = self.call("GET", "/api/agent/preview")
+        sec = [x for x in d["sections"] if x["key"] == "instructions"]
+        self.assertEqual(len(sec), 1)
+        self.assertEqual(sec[0]["items"], [])
+        self.assertEqual(sec[0]["over_limit"], 1)
+
     def test_mark_used_accepts_common_argument_mistakes(self):
         a = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저")["memo_id"]
         for args in ({"memo_ids": [a]}, {"ids": f"[{a}]"}, {"memo_ids": f"m:{a}"}, {"memo_ids": [str(a)]}, {"memo_id": a}):
