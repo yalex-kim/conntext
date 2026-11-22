@@ -454,7 +454,7 @@ class TestScopeAndInjection(Base):
         ids = [it["memo_id"] for s in ctx["sections"] if s["key"] == "instructions" for it in s["items"]]
         self.assertEqual(ids, [new])
         self.assertEqual(ctx["instruction_usage"]["over"], 1)
-        self.assertIn("상한(60자)을 넘어 오래된 1건이 빠졌다", ctx["text"])
+        self.assertIn("1건이 상한(최대 12건, 글자 60자)에 들어가지 않아 빠졌다", ctx["text"])
 
     def test_project_instructions_come_first_and_count_per_scope(self):
         db.set_policy("injection", {"instruction_chars": 80})
@@ -481,6 +481,32 @@ class TestScopeAndInjection(Base):
         m = pipeline.remember(self.alice, "주석에는 이모지를 넣지 않는다. 검색과 grep이 어려워진다", do_analyze=False)["memo_id"]
         r = pipeline.set_kind(self.alice, m, "instruction")
         self.assertIn("상한을 넘었습니다", r["message"])
+
+    def test_char_cap_applies_to_the_first_instruction_too(self):
+        # 리뷰(PR #21): 가장 최근 지시 하나가 혼자 상한을 넘으면 그대로 들어가고 경고도 없었다.
+        db.set_policy("injection", {"instruction_chars": 50})
+        big = self.inst("가장 최근이지만 아주 긴 지시: " + "가" * 80)["memo_id"]
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        self.assertNotIn(big, ctx["memo_ids"])
+        self.assertEqual(ctx["instruction_usage"]["over"], 1)
+        self.assertIn("1건이 상한", ctx["text"])
+
+    def test_long_instruction_does_not_push_out_the_others(self):
+        db.set_policy("injection", {"instruction_chars": 60})
+        small = self.inst("답변은 한국어로 해 줘")["memo_id"]
+        db.ex("UPDATE memos SET created_at=? WHERE id=?", db.now() - 86400, small)
+        big = self.inst("최근의 긴 지시: " + "나" * 80)["memo_id"]
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        self.assertIn(small, ctx["memo_ids"])          # 넘는 순간 멈추면 small까지 빠졌다
+        self.assertNotIn(big, ctx["memo_ids"])
+
+    def test_zero_max_instructions_injects_none(self):
+        # 리뷰(PR #21): 0을 '제한 없음'으로 읽어 지시를 모두 넣었다. 예전처럼 0이면 넣지 않는다.
+        db.set_policy("injection", {"max_instructions": 0})
+        self.inst("답변은 한국어로 해 줘")
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        self.assertFalse([s for s in ctx["sections"] if s["key"] == "instructions" and s["items"]])
+        self.assertEqual(ctx["instruction_usage"]["injected"], 0)
 
     def test_zero_limit_disables_char_budget(self):
         db.set_policy("injection", {"instruction_chars": 0})

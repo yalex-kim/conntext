@@ -82,7 +82,7 @@ async function agentScreen(root, ctx) {
           <header class="asec__head"><span class="swatch ${f.cls}" aria-hidden="true"></span><h3 class="asec__title" id="as-${s.key}">${s.title}</h3>
             <span class="asec__tok"><span class="num">${fmtNum(s.tokens)}</span> 토큰</span>
             ${s.key === 'instructions' && d.instruction_usage?.limit ? html`<span class="asec__usage${d.instruction_usage.chars > d.instruction_usage.limit ? ' warn-text' : ''}">글자 <span class="num">${fmtNum(d.instruction_usage.chars)}</span> / <span class="num">${fmtNum(d.instruction_usage.limit)}</span>자</span>` : ''}
-            ${s.over_limit ? html`<span class="warn-text small">글자 상한을 넘어 오래된 ${s.over_limit}개 빠짐. 합치거나 줄이세요</span>` : ''}
+            ${s.over_limit ? html`<span class="warn-text small">상한에 들어가지 않아 ${s.over_limit}개 빠짐. 합치거나 줄이세요</span>` : ''}
             ${s.dropped ? html`<span class="warn-text small">예산 초과로 ${s.dropped}개 빠짐</span>` : ''}</header>
           ${s.items.length ? html`<ul class="aitems">${s.items.map((it) => html`<li>
             <span class="aitems__ref">${it.memo_id ? memoTag({ id: it.memo_id, tier, author: s.key === 'team_instructions' ? it.tag : null }, { href: `#/memos/${it.memo_id}`, by: false })
