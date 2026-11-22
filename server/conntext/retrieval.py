@@ -177,6 +177,21 @@ def _state_view(st):
             "platform": st.get("platform"), "source": st["source"]}
 
 
+def instruction_usage(user_id, project_key=None):
+    """세션 시작 때 항상 들어갈 지시·선호(전체 범위 + 이 저장소 범위)의 글자 수와 상한(#17).
+    순서는 주입 순서와 같다: 저장소 범위가 먼저, 그 안에서 최근 것이 먼저."""
+    pid = access.personal_space_id(user_id)
+    scope = "(m.scope='global' OR m.project_key=?)" if project_key else "m.scope='global'"
+    rows = db.q(f"SELECT m.id, m.body, m.scope, m.project_key FROM memos m WHERE m.space_id=? AND m.kind='instruction' AND m.status='active' "
+                f"AND m.trust='high' AND {scope} ORDER BY m.scope='project' DESC, m.created_at DESC",
+                pid, *((project_key,) if project_key else ()))
+    for r in rows:
+        r["chars"] = len(r["body"])
+    pol = db.policy("injection")
+    return {"chars": sum(r["chars"] for r in rows), "limit": int(pol.get("instruction_chars") or 0),
+            "max_count": int(pol.get("max_instructions") or 0), "items": rows}
+
+
 def build_context(user, project_key=None, platform=None, session_ext_id=None, log=True):
     """세션 시작 때 에이전트에 넣는 블록. 예산 안에서 위에서부터 채운다."""
     t0 = time.time()
@@ -194,12 +209,19 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
     def args(*a):
         return (*a, project_key) if project_key else a
 
-    # 1. 지시·선호: 항상 주입
-    inst = db.q(f"SELECT m.id, m.body, m.scope FROM memos m WHERE m.space_id=? AND m.kind='instruction' AND m.status='active' "
-                f"AND m.trust='high' AND {scope_clause()} ORDER BY m.scope='project' DESC, m.created_at DESC LIMIT ?",
-                *args(pid), pol["max_instructions"])
+    # 1. 지시·선호: 항상 주입. 개수 상한과 글자 상한 안에서 앞에서부터(저장소 범위, 최근 순) 넣는다.
+    usage = instruction_usage(uid, project_key)
+    inst, chars = [], 0
+    for r in usage["items"]:
+        if usage["max_count"] and len(inst) >= usage["max_count"]:
+            break
+        if usage["limit"] and inst and chars + r["chars"] > usage["limit"]:
+            break
+        inst.append(r)
+        chars += r["chars"]
+    over = len(usage["items"]) - len(inst)
     if inst:
-        sections.append({"key": "instructions", "title": "지시·선호 (항상 적용)", "tier": "mine",
+        sections.append({"key": "instructions", "title": "지시·선호 (항상 적용)", "tier": "mine", "over_limit": over,
                          "items": [{"memo_id": r["id"], "text": r["body"], "tag": "이 저장소" if r["scope"] == "project" else None} for r in inst]})
     if team_ids:
         tinst = db.q(f"SELECT m.id, m.body, u.name AS author FROM memos m JOIN users u ON u.id=m.author_id "
@@ -238,6 +260,9 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
                              "items": [{"topic_id": t["id"], "text": _topic_line(t), "tag": f"메모 {t['n']}건"} for t in tt]})
 
     head = "# Conntext\n이 사용자가 쌓아 둔 맥락이다. 지식 색인에는 주제 제목만 실었다. 지금 작업과 관련 있어 보이는 주제가 있으면 conntext의 `recall` 도구로 찾거나 `get_topic`에 [t:번호]를 넣어 본문을 꺼내 쓴다.\n"
+    if over:
+        head += (f"항상 적용 지시·선호가 상한({usage['limit']:,}자)을 넘어 오래된 {over}건이 빠졌다. 적당한 때에 사용자에게 "
+                 "비슷한 지시를 합치거나 긴 지시를 줄이자고 제안한다(웹의 '에이전트' 화면이나 remember의 replaces로 정리).\n")
     foot = "\n메모를 답에 썼으면 `mark_used`로 알린다. 사용자가 틀렸다고 하면 `remember`로 고친 내용을 저장한다.\n"
     used = est_tokens(head) + est_tokens(foot)
     kept = []
@@ -277,7 +302,8 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
         for mid in memo_ids:
             db.insert("memo_uses", memo_id=mid, user_id=uid, kind="inject", session_ext_id=session_ext_id, created_at=now)
         db.metric("latency", "inject", ms, user_id=uid)
-    return {"text": "" if empty else text, "tokens": 0 if empty else used, "budget": budget, "sections": kept,
+    usage_out = {"chars": usage["chars"], "limit": usage["limit"], "count": len(usage["items"]), "injected": len(inst), "over": over}
+    return {"text": "" if empty else text, "tokens": 0 if empty else used, "budget": budget, "sections": kept, "instruction_usage": usage_out,
             "memo_ids": memo_ids, "topic_ids": topic_ids, "ms": round(ms, 1), "project_key": project_key}
 
 

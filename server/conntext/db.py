@@ -98,7 +98,7 @@ DEFAULT_POLICIES = {
     ],
     "capture": {"platforms": ["claude-code", "opencode", "connpass"], "excluded_projects": [], "max_transcript_chars": 400000},
     "retention": {"transcript_days": 90, "candidate_days": 30, "state_days": 14, "candidate_promote_uses": 2},
-    "injection": {"token_budget": 1500, "max_instructions": 12, "max_topics": 40},
+    "injection": {"token_budget": 1500, "max_instructions": 12, "instruction_chars": 1200, "max_topics": 40},
     # 예산을 넘으면 최근 24시간 사용량이 다시 예산 아래로 내려갈 때까지 규칙 기반으로 처리한다(llm._over_budget).
     "budget": {"daily_tokens_per_user": 400000},
     "clients": {"min_plugin_version": config.MIN_PLUGIN_VERSION},

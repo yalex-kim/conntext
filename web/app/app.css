@@ -594,3 +594,4 @@ button.cite:hover { filter: brightness(0.95); }
 .memo__stale > span { flex: 1 1 16rem; }
 .pm-replaces { display: flex; gap: 6px; align-items: flex-start; margin: var(--s-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
 .pm-replaces s { color: var(--ink-2); }
+.asec__usage { font-size: var(--fs-2); color: var(--ink-2); font-variant-numeric: tabular-nums; }

@@ -417,6 +417,36 @@ def stale_team_copies(memo_id, space_id=None):
                 *older, *((space_id,) if space_id else ()))
 
 
+def instruction_overflow_lines(m):
+    """지시·선호를 저장하거나 종류를 바꾼 뒤, 항상 적용 지시가 글자 상한을 넘었으면 알린다(#17).
+    저장은 그대로 둔다(원문 보존). 무엇을 합치거나 줄일지는 사용자가 정한다."""
+    if m["kind"] != "instruction" or m["status"] != "active" or m["trust"] == "low":
+        return []
+    if db.val("SELECT kind FROM spaces WHERE id=?", m["space_id"]) != "personal":
+        return []
+    # 세션 시작 때는 '전체 범위 + 그 저장소 범위' 지시가 함께 들어간다. 저장소 범위 지시는 그 저장소만,
+    # 전체 범위 지시는 모든 저장소에 들어가므로 저장소별 합 가운데 가장 큰 경우로 판단한다.
+    if m["scope"] == "project":
+        keys = [m["project_key"]]
+    else:
+        keys = [None] + [r["project_key"] for r in db.q(
+            "SELECT DISTINCT project_key FROM memos WHERE space_id=? AND kind='instruction' AND status='active' AND trust='high' "
+            "AND scope='project' AND project_key IS NOT NULL", m["space_id"])]
+    u, worst = None, None
+    for k in keys:
+        cand = retrieval.instruction_usage(m["author_id"], k)
+        if u is None or cand["chars"] > u["chars"]:
+            u, worst = cand, k
+    if not u["limit"] or u["chars"] <= u["limit"]:
+        return []
+    where = f" (저장소 {short_project(worst)}에서 세션을 시작할 때 기준)" if worst else ""
+    lines = [f"항상 적용 지시·선호가 상한을 넘었습니다: {u['chars']:,}자 / {u['limit']:,}자{where}. 넘친 만큼은 세션 시작 때 오래된 것부터 빠집니다.",
+             "비슷한 것을 합치거나 긴 것을 줄일 수 있습니다. 지금 지시·선호:"]
+    for r in u["items"]:
+        lines.append(f"  m:{r['id']} ({r['chars']}자) {_short(r['body'], 60)}")
+    return lines
+
+
 def describe(memo_id, event_id=None, detail=None):
     """저장 결과를 사람이 읽는 한 줄과 함께 돌려준다. 터미널과 웹이 같은 문구를 쓴다."""
     m = db.one("SELECT * FROM memos WHERE id=?", memo_id)
@@ -440,6 +470,7 @@ def describe(memo_id, event_id=None, detail=None):
         lines.append("새 주제 문서를 만들었습니다.")
     if detail.get("masked"):
         lines.append(f"민감 정보 {detail['masked']}건을 마스킹했습니다.")
+    lines += instruction_overflow_lines(m)
     stale = stale_team_copies(m["id"]) if rel == "update" and m["status"] == "active" else []
     for team in dict.fromkeys(c["team"] for c in stale):
         lines.append(f"팀 ‘{team}’에 공유된 이전 판이 그대로 있습니다. 웹에서 이 메모를 열어 팀 사본을 갱신할 수 있습니다.")
@@ -593,6 +624,9 @@ def set_kind(user, memo_id, kind):
     res["message"] = f"종류를 바꿈 m:{memo_id}: {kind_ko[m['kind']]} → {kind_ko[kind]} · {where}"
     if kind == "state":
         res["message"] += f"\n진행 상태는 {db.policy('retention').get('state_days', 14)}일 뒤 만료됩니다."
+    over = instruction_overflow_lines(db.one("SELECT * FROM memos WHERE id=?", memo_id))
+    if over:
+        res["message"] += "\n" + "\n".join(over)
     return res
 
 
