@@ -239,6 +239,8 @@ def delete_personal_data(user_id):
         db.ex("DELETE FROM entities WHERE space_id=?", pid)
         db.ex("DELETE FROM ingest_events WHERE space_id=?", pid)
     db.ex("DELETE FROM trace WHERE session_id IN (SELECT id FROM sessions WHERE user_id=?)", user_id)
+    for r in db.q("SELECT id FROM sessions WHERE user_id=?", user_id):
+        db.ex("DELETE FROM session_lines WHERE session_id=?", r["id"])
     db.ex("DELETE FROM sessions WHERE user_id=?", user_id)
     db.ex("DELETE FROM injections WHERE user_id=?", user_id)
     db.ex("DELETE FROM notifications WHERE user_id=?", user_id)

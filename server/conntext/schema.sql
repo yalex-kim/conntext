@@ -88,3 +88,5 @@ CREATE TABLE IF NOT EXISTS trace(
   id INTEGER PRIMARY KEY, memo_id INTEGER, session_id INTEGER, stage TEXT NOT NULL, result TEXT NOT NULL,
   ms REAL NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS trace_memo ON trace(memo_id);
+-- 지난 세션 검색(#14): 축약 대화록을 줄 단위로 색인한다. 본인 세션만 검색한다.
+CREATE VIRTUAL TABLE IF NOT EXISTS session_lines USING fts5(text, session_id UNINDEXED, line_no UNINDEXED, tokenize='trigram');

@@ -28,6 +28,20 @@ TOOLS = [
          "project": _PROJECT,
          "limit": {"type": "integer", "description": "결과 수(기본 6)."}},
          "required": ["query"]}},
+    {"name": "search_sessions",
+     "description": "사용자의 지난 세션 대화록(Claude Code·OpenCode)을 찾거나 읽는다. 정리된 지식은 recall로 찾고, "
+                    "'그때 무슨 얘기를 했지', '어떤 명령으로 고쳤지', '그때 어떤 오류였지'처럼 지난 대화 자체가 필요할 때 쓴다. "
+                    "모양은 인자로 정해진다: query = 찾기(걸린 줄과 앞뒤 줄), session_id = 읽기(from_line·to_line으로 범위), 인자 없음 = 최근 세션 목록. "
+                    "대화록은 발화와 도구 이름, 실패한 도구의 오류 출력 앞부분만 담고 파일 내용은 없다. 본인 세션만, 보존 기간(기본 90일) 안의 것만 나온다. "
+                    "결과의 L번호는 그 세션의 줄 번호라, 더 읽으려면 session_id와 from_line·to_line을 넣어 다시 부른다.",
+     "inputSchema": {"type": "object", "properties": {
+         "query": {"type": "string", "description": "찾을 단어나 문장. 고유한 단어(파일 이름, 명령, 오류 문구)일수록 잘 찾는다."},
+         "session_id": {"type": "integer", "description": "읽을 세션 id(찾기 결과의 s:번호)."},
+         "from_line": {"type": "integer"}, "to_line": {"type": "integer"},
+         "after": {"type": "string", "description": "이 시각 이후의 세션만. 7d·24h·2w 같은 상대값이나 2026-11-01 같은 날짜. 사용자가 기간을 말했을 때만."},
+         "before": {"type": "string"},
+         "sort": {"type": "string", "enum": ["newest", "oldest"], "description": "생략하면 관련도 순. '어디까지 했지'는 newest, '처음에 어떻게 시작했지'는 oldest."},
+         "limit": {"type": "integer", "description": "찾기에서 돌려줄 세션 수(기본 3, 최대 10)."}}}},
     {"name": "get_memos",
      "description": "메모 id로 전문과 이력(대체 관계, 소속 주제)을 가져온다. 세션 시작 색인이나 recall 결과의 [m:숫자]를 자세히 볼 때 쓴다.",
      "inputSchema": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "integer"}}}, "required": ["ids"]}},
@@ -99,6 +113,59 @@ def fmt_recall(res):
     return "\n\n".join(out)
 
 
+def _session_head(s):
+    proj = pipeline.short_project(s["project_key"]) or "저장소 없음"
+    when = time.strftime("%Y-%m-%d %H:%M", time.localtime(s["ended_at"] or s["started_at"]))
+    return f"s:{s['id']} · {s['platform']} · {proj} · {when}" + (f"\n요약: {s['summary']}" if s.get("summary") else "")
+
+
+def _cap(parts):
+    out, used = [], 0
+    for p in parts:
+        if used + len(p) > sessions.RESULT_CHARS:
+            out.append(f"…(결과가 길어 {len(parts) - len(out)}개 부분을 생략했습니다. 범위를 좁혀 다시 부르세요)")
+            break
+        out.append(p)
+        used += len(p)
+    return "\n\n".join(out)
+
+
+def fmt_search_sessions(user, a):
+    after, before = sessions.parse_when(a.get("after")), sessions.parse_when(a.get("before"))
+    if a.get("session_id"):
+        s = sessions.read_session(user, int(a["session_id"]))
+        lines = s["transcript"].splitlines()
+        lo = max(1, int(a.get("from_line") or 1))
+        hi = min(len(lines), int(a.get("to_line") or (lo + sessions.READ_LINES - 1)))
+        body = "\n".join(f"L{i} {lines[i - 1]}" for i in range(lo, hi + 1))
+        more = f"\n…(전체 {len(lines)}줄 중 L{lo}–L{hi}. 더 읽으려면 from_line={hi + 1})" if hi < len(lines) else ""
+        return _cap([_session_head(s), body + more])
+    if not (a.get("query") or "").strip():
+        rows = sessions.recent_sessions(user, a.get("limit") or 10)
+        if not rows:
+            return "검색할 수 있는 지난 세션이 없습니다. 세션이 끝나면 대화록이 올라옵니다(기록을 꺼 둔 세션은 제외)."
+        return "최근 세션\n" + "\n".join(_session_head(r).replace("\n", " / ") for r in rows)
+    hits = sessions.search_sessions(user, a["query"], after, before, a.get("limit") or 3, a.get("sort"))
+    if not hits:
+        return f"\"{a['query']}\"에 해당하는 지난 세션 대화가 없습니다. 다른 단어(파일 이름, 명령, 오류 문구)로 다시 찾거나 기간을 넓혀 보세요."
+    parts = [f"\"{a['query']}\" 지난 세션 {len(hits)}개"]
+    for h in hits:
+        s = h["session"]
+        lines = s["transcript"].splitlines()
+        keep = set()
+        for ln in h["lines"]:
+            keep.update(range(max(1, ln - sessions.SEARCH_CONTEXT), min(len(lines), ln + sessions.SEARCH_CONTEXT) + 1))
+        out, prev = [], None
+        for i in sorted(keep):
+            if prev is not None and i != prev + 1:
+                out.append("…")
+            out.append(f"L{i} {lines[i - 1][:400]}")
+            prev = i
+        parts.append(_session_head(s) + "\n" + "\n".join(out))
+    parts.append("더 읽으려면 search_sessions에 session_id와 from_line·to_line을 넣는다.")
+    return _cap(parts)
+
+
 def fmt_resume(res):
     st = res["state"]
     if not st:
@@ -113,6 +180,24 @@ def fmt_resume(res):
     return "\n\n".join(out)
 
 
+def _memo_ids(a):
+    """mark_used의 id 목록. 모델이 이름(ids)이나 형식("[8]", "8,9", "m:8")을 틀려도 받아 준다.
+    조용히 0건으로 처리하면 사용 기록이 사라지고, 후보 자동 승격과 색인 순서가 틀어진다."""
+    import re
+    raw = a.get("memo_ids", a.get("ids", a.get("memo_id", [])))
+    if isinstance(raw, (int, float)):
+        raw = [raw]
+    if isinstance(raw, str):
+        raw = re.findall(r"\d+", raw)
+    out = []
+    for v in raw or []:
+        try:
+            out.append(int(re.sub(r"\D", "", str(v)) if isinstance(v, str) else v))
+        except (TypeError, ValueError):
+            continue
+    return list(dict.fromkeys(out))
+
+
 def call_tool(user, name, a, session_ext_id=None):
     db.metric("cmd", name, user_id=user["id"])
     project = normalize_project(a.get("project"))
@@ -125,6 +210,8 @@ def call_tool(user, name, a, session_ext_id=None):
         return pipeline.remember(user, a.get("text", ""), scope=scope, project_key=project, replaces_id=a.get("replaces"))["message"]
     if name == "recall":
         return fmt_recall(retrieval.recall(user, a.get("query", ""), project, session_ext_id, limit=min(int(a.get("limit") or 6), 20)))
+    if name == "search_sessions":
+        return fmt_search_sessions(user, a)
     if name == "get_memos":
         out = []
         for mid in (a.get("ids") or [])[:20]:
@@ -165,7 +252,7 @@ def call_tool(user, name, a, session_ext_id=None):
             return "\n".join(lines)
         raise BadRequest("memo_id, query, undo_last 가운데 하나가 필요합니다.")
     if name == "mark_used":
-        r = retrieval.mark_used(user, a.get("memo_ids") or [], session_ext_id)
+        r = retrieval.mark_used(user, _memo_ids(a), session_ext_id)
         return f"사용 기록 {r['marked']}건." + (f" 후보 {len(r['promoted'])}건이 정식 메모로 올라갔습니다." if r["promoted"] else "")
     raise NotFound(f"알 수 없는 도구: {name}")
 

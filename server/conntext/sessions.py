@@ -26,6 +26,21 @@ def _text_of(content):
     return "\n".join(texts), tools
 
 
+ERROR_LINES = 20       # 실패한 도구 결과에서 남기는 줄 수
+ERROR_LINE_CHARS = 200
+
+
+def _error_lines(text):
+    """실패한 도구의 오류 출력 앞부분. 파일 내용·성공한 출력은 남기지 않는다(#14)."""
+    if isinstance(text, list):
+        text = "\n".join(b.get("text", "") for b in text if isinstance(b, dict) and b.get("type") == "text")
+    rows = [ln.rstrip()[:ERROR_LINE_CHARS] for ln in str(text or "").splitlines() if ln.strip()]
+    out = [f"[오류] {ln}" for ln in rows[:ERROR_LINES]]
+    if len(rows) > ERROR_LINES:
+        out.append(f"[오류] …(오류 출력 {len(rows) - ERROR_LINES}줄 생략)")
+    return out
+
+
 def condense(transcript=None, messages=None):
     """Claude Code JSONL 또는 [{role, text}] 목록을 '사용자:/에이전트:/[도구]' 줄로 줄인다."""
     lines = []
@@ -37,6 +52,8 @@ def condense(transcript=None, messages=None):
                 lines.append(f"{role}: {t}")
             for tool in m.get("tools") or []:
                 lines.append(f"[도구] {str(tool)[:160]}")
+            for err in m.get("errors") or []:
+                lines += _error_lines(err)
         return "\n".join(lines)
     for raw in (transcript or "").splitlines():
         raw = raw.strip()
@@ -50,6 +67,11 @@ def condense(transcript=None, messages=None):
         if e.get("type") not in ("user", "assistant") or e.get("isMeta") or e.get("isSidechain"):
             continue
         msg = e.get("message") or {}
+        if e["type"] == "user" and isinstance(msg.get("content"), list):
+            # 도구 결과는 버리되, 실패한 것의 오류 출력 앞부분만 남긴다.
+            for b in msg["content"]:
+                if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
+                    lines += _error_lines(b.get("content"))
         text, tools = _text_of(msg.get("content"))
         text = re.sub(r"<system-reminder>[\s\S]*?</system-reminder>", "", text).strip()
         if e["type"] == "user":
@@ -113,6 +135,7 @@ def upload(user, platform, ext_id, project_key=None, cwd=None, transcript=None, 
     if final:
         fields.update(status="uploaded", ended_at=db.now())
     db.update("sessions", sid, **fields)
+    index_lines(sid, text)
     db.trace("session_upload", f"{platform}:{'final' if final else 'checkpoint'}:{reason or ''}:chars={len(text)}:masked={masked}", session_id=sid)
     if final and len(text) >= 40:
         jobs.enqueue("session_extract", {"session_id": sid}, dedupe=True)
@@ -240,7 +263,126 @@ def maintenance():
         db.ex("UPDATE memos SET body='', title='', embedding=NULL WHERE id=?", m["id"])
         db.ex("DELETE FROM memos_fts WHERE rowid=?", m["id"])
     # 세션 대화록 보존 기간
-    db.ex("UPDATE sessions SET transcript=NULL WHERE transcript IS NOT NULL AND COALESCE(ended_at, started_at)<?", now - ret["transcript_days"] * 86400)
+    cut = now - ret["transcript_days"] * 86400
+    for r in db.q("SELECT id FROM sessions WHERE transcript IS NOT NULL AND COALESCE(ended_at, started_at)<?", cut):
+        drop_lines(r["id"])
+    db.ex("UPDATE sessions SET transcript=NULL WHERE transcript IS NOT NULL AND COALESCE(ended_at, started_at)<?", cut)
+    # 색인이 없는 대화록(이 기능 이전에 올라온 것)을 색인한다.
+    for r in db.q("SELECT id, transcript FROM sessions WHERE transcript IS NOT NULL AND status!='excluded' "
+                  "AND id NOT IN (SELECT DISTINCT CAST(session_id AS INTEGER) FROM session_lines) LIMIT 200"):
+        index_lines(r["id"], r["transcript"])
     for t in db.q("SELECT id FROM topics WHERE dirty=1"):
         jobs.enqueue("topic_summary", {"topic_id": t["id"]}, dedupe=True)
     db.ex("DELETE FROM metrics WHERE created_at<?", now - 60 * 86400)
+
+
+# ── 지난 세션 검색(#14) ─────────────────────────────────────────────
+# 축약 대화록을 줄 단위로 색인하고, 에이전트가 본인 세션만 찾고 읽는다. LLM은 쓰지 않는다.
+SEARCH_CONTEXT = 2        # 걸린 줄 앞뒤로 보여 줄 줄 수
+SEARCH_HITS_PER_SESSION = 3
+RESULT_CHARS = 5000       # 한 번 호출의 결과 상한
+READ_LINES = 80
+
+
+def drop_lines(session_id):
+    db.ex("DELETE FROM session_lines WHERE session_id=?", session_id)
+
+
+def index_lines(session_id, text):
+    drop_lines(session_id)
+    for i, ln in enumerate((text or "").splitlines(), 1):
+        if ln.strip():
+            db.ex("INSERT INTO session_lines(text, session_id, line_no) VALUES(?,?,?)", ln[:2000], session_id, i)
+
+
+_REL = re.compile(r"^(\d+)\s*([hdw])$", re.I)
+
+
+def parse_when(v):
+    """'7d', '24h', '2w' 또는 ISO 날짜(2026-11-01) → epoch. 못 읽으면 BadRequest."""
+    if v in (None, ""):
+        return None
+    m = _REL.match(str(v).strip())
+    if m:
+        return db.now() - int(m.group(1)) * {"h": 3600, "d": 86400, "w": 604800}[m.group(2).lower()]
+    import datetime
+    try:
+        d = datetime.datetime.fromisoformat(str(v).strip())
+    except ValueError:
+        from .access import BadRequest
+        raise BadRequest(f"기간을 읽지 못했습니다: {v} (예: 7d, 24h, 2w, 2026-11-01)")
+    return int(d.timestamp())
+
+
+def _own_sessions(user, after=None, before=None):
+    sql = ("SELECT id, platform, project_key, started_at, ended_at, summary, transcript FROM sessions "
+           "WHERE user_id=? AND transcript IS NOT NULL AND status!='excluded'")
+    args = [user["id"]]
+    if after:
+        sql += " AND COALESCE(ended_at, started_at)>=?"
+        args.append(after)
+    if before:
+        sql += " AND COALESCE(ended_at, started_at)<?"
+        args.append(before)
+    return {r["id"]: r for r in db.q(sql, *args)}
+
+
+def _terms(query):
+    return [t.lower() for t in re.findall(r"[\w\uac00-\ud7a3./:-]+", query or "") if len(t) >= 2][:12]
+
+
+def search_sessions(user, query, after=None, before=None, limit=3, sort=None):
+    """질의의 단어가 많이 걸린 줄을 찾아, 세션별로 묶어 앞뒤 줄과 함께 돌려준다."""
+    own = _own_sessions(user, after, before)
+    terms = _terms(query)
+    if not own or not terms:
+        return []
+    ids = list(own)
+    marks = ",".join("?" * len(ids))
+    long_t = [t for t in terms if len(t) >= 3]
+    rows = []
+    if long_t:   # 3글자 이상은 trigram 색인으로
+        fq = " OR ".join('"' + t.replace('"', "") + '"' for t in long_t)
+        rows += db.q(f"SELECT session_id, line_no, text FROM session_lines WHERE session_lines MATCH ? AND session_id IN ({marks}) LIMIT 2000", fq, *ids)
+    for t in [t for t in terms if len(t) < 3]:   # 2글자 한국어 단어(배포, 원인 등)는 색인으로 못 찾으므로 직접 찾는다
+        rows += db.q(f"SELECT session_id, line_no, text FROM session_lines WHERE text LIKE ? AND session_id IN ({marks}) LIMIT 2000", f"%{t}%", *ids)
+    best = {}
+    for r in rows:
+        low = r["text"].lower()
+        score = sum(1 for t in terms if t in low)
+        if not score:
+            continue
+        sid = int(r["session_id"])
+        hits = best.setdefault(sid, {})
+        hits[int(r["line_no"])] = score
+    ranked = []
+    for sid, hits in best.items():
+        top = sorted(hits.items(), key=lambda kv: (-kv[1], kv[0]))[:SEARCH_HITS_PER_SESSION]
+        s = own[sid]
+        ranked.append({"session": s, "score": max(hits.values()), "lines": sorted(ln for ln, _ in top)})
+    when = lambda x: x["session"]["ended_at"] or x["session"]["started_at"]
+    if sort == "oldest":
+        ranked.sort(key=lambda x: (when(x)))
+    elif sort == "newest":
+        ranked.sort(key=lambda x: (-when(x)))
+    else:
+        ranked.sort(key=lambda x: (-x["score"], -when(x)))
+    return ranked[:max(1, min(int(limit or 3), 10))]
+
+
+def read_session(user, session_id, from_line=None, to_line=None):
+    s = db.one("SELECT id, platform, project_key, started_at, ended_at, summary, transcript, status FROM sessions WHERE id=? AND user_id=?",
+               session_id, user["id"])
+    if not s or s["status"] == "excluded":
+        from .access import NotFound
+        raise NotFound("세션을 찾을 수 없습니다.")
+    if not s["transcript"]:
+        from .access import NotFound
+        raise NotFound("이 세션의 대화록은 보존 기간이 지나 지워졌습니다. 요약과 진행 상태만 남아 있습니다.")
+    return s
+
+
+def recent_sessions(user, limit=10):
+    return db.q("SELECT id, platform, project_key, started_at, ended_at, summary, transcript_chars FROM sessions "
+                "WHERE user_id=? AND transcript IS NOT NULL AND status!='excluded' ORDER BY COALESCE(ended_at, started_at) DESC LIMIT ?",
+                user["id"], max(1, min(int(limit or 10), 20)))

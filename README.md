@@ -162,7 +162,7 @@ server/conntext/     서버 (Python 표준 라이브러리, SQLite)
   __main__.py        CLI: serve, seed, token
   config.py          환경 변수 설정
   api.py             HTTP 서버: 웹 API, 훅 수신, /mcp, /client/ 배포, 정적 파일
-  mcp.py             MCP 도구(remember, recall, get_memos, get_topic, resume, handoff, forget, mark_used)
+  mcp.py             MCP 도구(remember, recall, search_sessions, get_memos, get_topic, resume, handoff, forget, mark_used)
   pipeline.py        메모 저장 파이프라인, 주제 문서, 팀 승격, 되돌리기
   retrieval.py       검색(recall), 세션 시작 맥락 구성, 진행 상태 조회
   sessions.py        세션 수집, 대화록 축약, 진행 상태·지식 후보 추출, 보존 기간 정리
@@ -269,7 +269,7 @@ curl -s -X PUT  $S/api/admin/teams/<팀 id>/members -H "$H" -H 'Content-Type: ap
 |---|---|
 | `masking_rules` | 마스킹 정규식 목록(`{name, pattern}`) |
 | `capture` | `platforms`, `excluded_projects`(부분 문자열 일치), `max_transcript_chars` 400000 |
-| `retention` | 대화록 30일, 쓰이지 않은 후보 30일, 진행 상태 14일, 후보 자동 승격 사용 횟수 2 |
+| `retention` | 대화록 90일(에이전트의 `search_sessions` 검색 대상), 쓰이지 않은 후보 30일, 진행 상태 14일, 후보 자동 승격 사용 횟수 2 |
 | `injection` | 세션 시작 맥락 토큰 예산 1500, 지시 최대 12개, 주제 최대 40개(색인은 제목만 넣으므로 보통 예산이 먼저 개수를 정한다) |
 | `budget` | 사용자별 최근 24시간 LLM 토큰 400000. 넘으면 규칙 기반으로 처리 |
 | `clients` | 최소 플러그인 버전 |
