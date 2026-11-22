@@ -224,7 +224,7 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
         inst.append(r)
         chars += r["chars"]
     over = len(usage["items"]) - len(inst)
-    if inst:
+    if inst or over:   # 지시가 모두 빠졌어도 구역은 남겨, 화면이 빠진 이유를 보여 줄 수 있게 한다
         sections.append({"key": "instructions", "title": "지시·선호 (항상 적용)", "tier": "mine", "over_limit": over,
                          "items": [{"memo_id": r["id"], "text": r["body"], "tag": "이 저장소" if r["scope"] == "project" else None} for r in inst]})
     if team_ids:
@@ -281,7 +281,7 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
         if items:
             used += cost
             kept.append({**sec, "items": items, "tokens": cost, "dropped": dropped})
-        elif sec["items"]:
+        elif sec["items"] or sec.get("over_limit"):
             kept.append({**sec, "items": [], "tokens": 0, "dropped": dropped})
     # 지시가 상한 때문에 빠졌다는 안내는 내용을 채운 뒤 남은 예산 안에서만 붙인다(리뷰 PR #21).
     # 긴 안내가 안 들어가면 짧은 안내, 그것도 안 들어가면 생략한다. 예산이 내용보다 안내에 쓰이지 않게 한다.
