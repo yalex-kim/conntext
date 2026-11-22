@@ -500,6 +500,28 @@ class TestScopeAndInjection(Base):
         self.assertIn(small, ctx["memo_ids"])          # 넘는 순간 멈추면 small까지 빠졌다
         self.assertNotIn(big, ctx["memo_ids"])
 
+    def test_overflow_notice_stays_within_token_budget(self):
+        # 리뷰(PR #21): 안내를 예산 계산 전에 머리말에 붙여, 예산 200에 216토큰이 나갔다.
+        self.inst("아주 긴 지시: " + "가" * 80)
+        for budget, expect in ((200, "상한 때문에 빠졌다"), (400, "제안한다(웹의")):
+            db.set_policy("injection", {"token_budget": budget, "instruction_chars": 50})
+            ctx = retrieval.build_context(self.alice, None, log=False)
+            self.assertLessEqual(ctx["tokens"], budget)
+            self.assertLessEqual(retrieval.est_tokens(ctx["text"]), budget)
+            self.assertIn(expect, ctx["text"])
+        db.set_policy("injection", {"token_budget": 120, "instruction_chars": 50})   # 안내도 못 넣으면 비운다
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        self.assertEqual(ctx["text"], "")
+
+    def test_content_comes_before_overflow_notice(self):
+        small = self.inst("답변은 한국어로 해 줘")["memo_id"]
+        db.ex("UPDATE memos SET created_at=? WHERE id=?", db.now() - 86400, small)
+        self.inst("최근의 긴 지시: " + "나" * 80)
+        db.set_policy("injection", {"token_budget": 200, "instruction_chars": 60})
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        self.assertIn(small, ctx["memo_ids"])
+        self.assertLessEqual(ctx["tokens"], 200)
+
     def test_zero_max_instructions_injects_none(self):
         # 리뷰(PR #21): 0을 '제한 없음'으로 읽어 지시를 모두 넣었다. 예전처럼 0이면 넣지 않는다.
         db.set_policy("injection", {"max_instructions": 0})

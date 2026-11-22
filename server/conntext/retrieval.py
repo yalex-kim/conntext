@@ -264,10 +264,6 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
                              "items": [{"topic_id": t["id"], "text": _topic_line(t), "tag": f"메모 {t['n']}건"} for t in tt]})
 
     head = "# Conntext\n이 사용자가 쌓아 둔 맥락이다. 지식 색인에는 주제 제목만 실었다. 지금 작업과 관련 있어 보이는 주제가 있으면 conntext의 `recall` 도구로 찾거나 `get_topic`에 [t:번호]를 넣어 본문을 꺼내 쓴다.\n"
-    if over:
-        limit = f"{usage['limit']:,}자" if usage["limit"] else "없음"
-        head += (f"항상 적용 지시·선호 {over}건이 상한(최대 {usage['max_count']}건, 글자 {limit})에 들어가지 않아 빠졌다. "
-                 "적당한 때에 사용자에게 비슷한 지시를 합치거나 긴 지시를 줄이자고 제안한다(웹의 '에이전트' 화면이나 remember의 replaces로 정리).\n")
     foot = "\n메모를 답에 썼으면 `mark_used`로 알린다. 사용자가 틀렸다고 하면 `remember`로 고친 내용을 저장한다.\n"
     used = est_tokens(head) + est_tokens(foot)
     kept = []
@@ -287,7 +283,19 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
             kept.append({**sec, "items": items, "tokens": cost, "dropped": dropped})
         elif sec["items"]:
             kept.append({**sec, "items": [], "tokens": 0, "dropped": dropped})
-    text = head
+    # 지시가 상한 때문에 빠졌다는 안내는 내용을 채운 뒤 남은 예산 안에서만 붙인다(리뷰 PR #21).
+    # 긴 안내가 안 들어가면 짧은 안내, 그것도 안 들어가면 생략한다. 예산이 내용보다 안내에 쓰이지 않게 한다.
+    notice = ""
+    if over:
+        limit = f"{usage['limit']:,}자" if usage["limit"] else "없음"
+        for cand in (f"항상 적용 지시·선호 {over}건이 상한(최대 {usage['max_count']}건, 글자 {limit})에 들어가지 않아 빠졌다. "
+                     "적당한 때에 사용자에게 비슷한 지시를 합치거나 긴 지시를 줄이자고 제안한다(웹의 '에이전트' 화면이나 remember의 replaces로 정리).\n",
+                     f"지시·선호 {over}건이 상한 때문에 빠졌다. 사용자에게 정리를 제안한다.\n"):
+            if used + est_tokens(cand) <= budget:
+                notice = cand
+                used += est_tokens(cand)
+                break
+    text = head + notice
     for sec in kept:
         if not sec["items"]:
             continue
@@ -298,8 +306,8 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
             if it.get("topic_id"):
                 topic_ids.append(it["topic_id"])
     text += foot
-    # 넣을 것이 없어도 지시가 상한 때문에 빠졌다면, 그 사실은 알린다(머리말만 들어간다).
-    empty = not any(s["items"] for s in kept) and not over
+    # 넣을 것이 없어도 지시가 상한 때문에 빠졌다면, 예산이 허락하는 한 그 사실은 알린다(머리말만 들어간다).
+    empty = not any(s["items"] for s in kept) and not notice
     ms = (time.time() - t0) * 1000
     if log:
         now = db.now()
