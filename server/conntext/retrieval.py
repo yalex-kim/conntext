@@ -189,7 +189,7 @@ def instruction_usage(user_id, project_key=None):
         r["chars"] = len(r["body"])
     pol = db.policy("injection")
     return {"chars": sum(r["chars"] for r in rows), "limit": int(pol.get("instruction_chars") or 0),
-            "max_count": int(pol.get("max_instructions") or 0), "items": rows}
+            "max_count": int(pol["max_instructions"] if pol.get("max_instructions") is not None else 12), "items": rows}
 
 
 def build_context(user, project_key=None, platform=None, session_ext_id=None, log=True):
@@ -209,14 +209,18 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
     def args(*a):
         return (*a, project_key) if project_key else a
 
-    # 1. 지시·선호: 항상 주입. 개수 상한과 글자 상한 안에서 앞에서부터(저장소 범위, 최근 순) 넣는다.
+    # 1. 지시·선호: 항상 주입. 우선순위(저장소 범위, 최근 순)대로 두 상한 안에 들어가는 것만 넣는다.
+    #    - 개수 상한 max_instructions: 0이면 지시를 넣지 않는다(예전 SQL LIMIT 0과 같은 뜻).
+    #    - 글자 상한 instruction_chars: 0이면 글자 상한이 없다. 첫 지시에도 적용한다.
+    #    상한에 들어가지 않는 지시는 건너뛰고 다음 것을 계속 본다. 넘는 순간 멈추면, 긴 지시 하나가
+    #    나머지 지시를 모두 밀어낸다.
     usage = instruction_usage(uid, project_key)
     inst, chars = [], 0
     for r in usage["items"]:
-        if usage["max_count"] and len(inst) >= usage["max_count"]:
+        if len(inst) >= usage["max_count"]:
             break
-        if usage["limit"] and inst and chars + r["chars"] > usage["limit"]:
-            break
+        if usage["limit"] and chars + r["chars"] > usage["limit"]:
+            continue
         inst.append(r)
         chars += r["chars"]
     over = len(usage["items"]) - len(inst)
@@ -261,8 +265,9 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
 
     head = "# Conntext\n이 사용자가 쌓아 둔 맥락이다. 지식 색인에는 주제 제목만 실었다. 지금 작업과 관련 있어 보이는 주제가 있으면 conntext의 `recall` 도구로 찾거나 `get_topic`에 [t:번호]를 넣어 본문을 꺼내 쓴다.\n"
     if over:
-        head += (f"항상 적용 지시·선호가 상한({usage['limit']:,}자)을 넘어 오래된 {over}건이 빠졌다. 적당한 때에 사용자에게 "
-                 "비슷한 지시를 합치거나 긴 지시를 줄이자고 제안한다(웹의 '에이전트' 화면이나 remember의 replaces로 정리).\n")
+        limit = f"{usage['limit']:,}자" if usage["limit"] else "없음"
+        head += (f"항상 적용 지시·선호 {over}건이 상한(최대 {usage['max_count']}건, 글자 {limit})에 들어가지 않아 빠졌다. "
+                 "적당한 때에 사용자에게 비슷한 지시를 합치거나 긴 지시를 줄이자고 제안한다(웹의 '에이전트' 화면이나 remember의 replaces로 정리).\n")
     foot = "\n메모를 답에 썼으면 `mark_used`로 알린다. 사용자가 틀렸다고 하면 `remember`로 고친 내용을 저장한다.\n"
     used = est_tokens(head) + est_tokens(foot)
     kept = []
@@ -293,7 +298,8 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
             if it.get("topic_id"):
                 topic_ids.append(it["topic_id"])
     text += foot
-    empty = not any(s["items"] for s in kept)
+    # 넣을 것이 없어도 지시가 상한 때문에 빠졌다면, 그 사실은 알린다(머리말만 들어간다).
+    empty = not any(s["items"] for s in kept) and not over
     ms = (time.time() - t0) * 1000
     if log:
         now = db.now()

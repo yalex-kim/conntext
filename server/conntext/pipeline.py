@@ -440,7 +440,7 @@ def instruction_overflow_lines(m):
     if not u["limit"] or u["chars"] <= u["limit"]:
         return []
     where = f" (저장소 {short_project(worst)}에서 세션을 시작할 때 기준)" if worst else ""
-    lines = [f"항상 적용 지시·선호가 상한을 넘었습니다: {u['chars']:,}자 / {u['limit']:,}자{where}. 넘친 만큼은 세션 시작 때 오래된 것부터 빠집니다.",
+    lines = [f"항상 적용 지시·선호가 상한을 넘었습니다: {u['chars']:,}자 / {u['limit']:,}자{where}. 세션 시작 때 상한에 들어가지 않는 지시는 빠집니다(이 저장소 범위와 최근 것이 우선).",
              "비슷한 것을 합치거나 긴 것을 줄일 수 있습니다. 지금 지시·선호:"]
     for r in u["items"]:
         lines.append(f"  m:{r['id']} ({r['chars']}자) {_short(r['body'], 60)}")
