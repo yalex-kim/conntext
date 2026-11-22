@@ -1065,6 +1065,31 @@ class TestProcedure(Base):
         self.assertIn("## 스테이징 배포할 때", doc)
         self.assertIn(f"[m:{m['id']}]", doc)
 
+    def test_procedure_is_not_merged_into_similar_knowledge(self):
+        k = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge", project_key=GW, kind="knowledge")
+        p = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge", project_key=GW)
+        self.assertEqual(p["kind"], "procedure")
+        self.assertEqual((p["status"], p["relation"]), ("active", "none"))
+        self.assertEqual(self.memo(k["memo_id"])["status"], "active")
+        self.assertEqual(self.topic(p["memo_id"])["kind"], "procedure")
+        self.assertTrue(db.val("SELECT 1 FROM links WHERE a_memo=? AND b_memo=? AND relation='related'", p["memo_id"], k["memo_id"]))
+        self.assertIn(self.topic(p["memo_id"])["id"], retrieval.build_context(self.alice, GW, log=False)["topic_ids"])
+        # LLM이 다른 종류의 메모를 중복·보충으로 판정해도 서버가 관련으로 낮춘다
+        from unittest import mock
+        for rel in ("duplicate", "supplement"):
+            fake = {"kind": "procedure", "title": "재시작", "when": "재시작할 때", "entities": [], "relation": rel, "target_id": k["memo_id"],
+                    "related_ids": [], "topic_id": None, "topic_title": "재시작 절차", "_by": "llm"}
+            with mock.patch.object(pipeline, "analyze", return_value=fake):
+                r = pipeline.remember(self.alice, f"게이트웨이 재시작은 broker부터 ({rel})", project_key=GW)
+            self.assertEqual((r["status"], r["relation"], r["kind"]), ("active", "none", "procedure"))
+        # 갱신은 대체하되 종류는 새 내용대로 둔다
+        fake.update(relation="update")
+        with mock.patch.object(pipeline, "analyze", return_value=fake):
+            r = pipeline.remember(self.alice, "게이트웨이 재시작은 broker부터, 10초 뒤 bridge", project_key=GW)
+        self.assertEqual((r["relation"], r["kind"]), ("update", "procedure"))
+        self.assertEqual(self.memo(k["memo_id"])["status"], "superseded")
+        self.assertEqual(self.topic(r["memo_id"])["kind"], "procedure")
+
     def test_heuristic_boundaries(self):
         for text, kind in [("배포하려면 먼저 make build 하고 그 다음 make deploy를 실행한다", "procedure"),
                            ("인증서 갱신할 때는 `certbot renew` 후 nginx를 reload한다", "procedure"),

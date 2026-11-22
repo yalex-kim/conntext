@@ -165,7 +165,9 @@ def heuristic_analyze(text, candidates, topics, space_id, kind=None):
            "relation": "none", "target_id": None, "related_ids": [], "topic_id": None, "topic_title": None}
     if kind in TOPIC_KIND:
         topics = [t for t in topics if t.get("kind", "knowledge") == TOPIC_KIND[kind]]
-    same_kind = [c for c in candidates if c["kind"] == kind or (kind in TOPIC_KIND and c["kind"] in TOPIC_KIND)]
+    # 중복·갱신·보충은 같은 종류끼리만 판정한다. 절차와 지식은 비슷해도 합치지 않고 관련으로만 잇는다(리뷰 PR #22).
+    same_kind = [c for c in candidates if c["kind"] == kind or (kind == "knowledge" and c["kind"] != "procedure")]
+    cross = [c for c in candidates if c not in same_kind and kind in TOPIC_KIND and c["kind"] in TOPIC_KIND and c["cos"] >= 0.16]
     if same_kind:
         top = same_kind[0]
         cos = top["cos"]
@@ -178,6 +180,7 @@ def heuristic_analyze(text, candidates, topics, space_id, kind=None):
         elif cos >= 0.16:
             res.update(relation="related", related_ids=[top["id"]])
         res["related_ids"] = [c["id"] for c in same_kind[1:4] if c["cos"] >= 0.2 and c["id"] != res["target_id"]]
+    res["related_ids"] += [c["id"] for c in cross[:2]]
     if kind in TOPIC_KIND and res["relation"] in ("none", "related"):
         # 주제 문구가 기존 주제 제목과 충분히 가까우면 거기에 붙이고, 아니면 새 주제를 만든다.
         # 개체가 겹친다는 이유만으로는 합치지 않는다(BLE, OTA 같은 넓은 개체가 모든 메모를 한 문서로 끌어모은다).
@@ -379,6 +382,12 @@ def remember(user, text, *, space_id=None, scope=None, project_key=None, kind=No
     target = db.one("SELECT * FROM memos WHERE id=? AND space_id=?", target_id, space_id) if target_id else None
     if rel in ("duplicate", "update", "supplement") and not target:
         rel = "none"
+    # 절차와 지식은 서로 합치거나 이어 붙이지 않는다. 합치면 한쪽이 비활성이 되어 그 종류의 색인에서 사라진다.
+    # 갱신은 같은 사안이 바뀐 것이라 대체하되, 종류는 새 내용대로 둔다.
+    cross = bool(target) and new_kind in TOPIC_KIND and target["kind"] in TOPIC_KIND and target["kind"] != new_kind
+    if cross and rel in ("duplicate", "supplement"):
+        a["related_ids"] = [target["id"], *(a.get("related_ids") or [])]
+        rel, target = "none", None
     # 확인되지 않은 세션 추출 후보가 사람이 적은 메모를 대체하지는 못한다.
     if rel == "update" and trust == "low" and target["trust"] != "low":
         rel = "supplement"
@@ -394,7 +403,7 @@ def remember(user, text, *, space_id=None, scope=None, project_key=None, kind=No
         detail["prev_target_status"] = target["status"]
         db.ex("UPDATE memos SET status='superseded', superseded_by=?, updated_at=? WHERE id=?", mid, now, target["id"])
         _link(mid, target["id"], "supersedes")
-        if target["kind"] != new_kind and not kind:
+        if target["kind"] != new_kind and not kind and not cross:
             db.ex("UPDATE memos SET kind=? WHERE id=?", target["kind"], mid)
             new_kind = target["kind"]
         # 같은 종류의 문서만 물려받는다. 지식 메모를 절차로 고쳐 쓰면 절차 문서에 새로 붙는다.
