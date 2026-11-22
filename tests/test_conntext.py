@@ -432,6 +432,71 @@ class TestScopeAndInjection(Base):
         self.assertEqual(len(kept), 3)
         self.assertEqual(kept[0], old_topic)
 
+    def inst(self, text, **kw):
+        return pipeline.remember(self.alice, text, kind="instruction", do_analyze=False, **kw)
+
+    def test_instruction_overflow_is_reported_but_saved(self):
+        db.set_policy("injection", {"instruction_chars": 100})
+        a = self.inst("커밋 메시지는 영어 명령형으로 써 줘. 예: Fix typo in README, Add retry to OTA chunk sender")
+        self.assertNotIn("상한을 넘었습니다", a["message"])
+        b = self.inst("답변은 항상 한국어로 하고 결론부터 말해 줘. 근거는 그 뒤에 짧게 붙여 줘")
+        self.assertEqual(self.memo(b["memo_id"])["status"], "active")       # 저장은 그대로
+        self.assertIn("상한을 넘었습니다", b["message"])
+        self.assertIn(f"m:{a['memo_id']}", b["message"])
+        self.assertIn(f"m:{b['memo_id']}", b["message"])
+
+    def test_injection_drops_oldest_instructions_over_char_limit(self):
+        db.set_policy("injection", {"instruction_chars": 60})
+        old = self.inst("오래된 지시: 로그는 항상 UTC로 남겨 줘. 현장 장비 시간이 제각각이라 비교가 어렵다")["memo_id"]
+        db.ex("UPDATE memos SET created_at=? WHERE id=?", db.now() - 86400, old)
+        new = self.inst("새 지시: PR 설명에 테스트한 기기 모델과 펌웨어 버전을 꼭 적어 줘")["memo_id"]
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        ids = [it["memo_id"] for s in ctx["sections"] if s["key"] == "instructions" for it in s["items"]]
+        self.assertEqual(ids, [new])
+        self.assertEqual(ctx["instruction_usage"]["over"], 1)
+        self.assertIn("상한(60자)을 넘어 오래된 1건이 빠졌다", ctx["text"])
+
+    def test_project_instructions_come_first_and_count_per_scope(self):
+        db.set_policy("injection", {"instruction_chars": 80})
+        g = self.inst("전체 지시: 답변은 한국어로 결론부터 짧게 써 줘")["memo_id"]
+        p = self.inst("ble-gateway 테스트는 항상 make test-hw-sim으로 돌려 줘", project_key=GW, scope="project")["memo_id"]
+        ctx = retrieval.build_context(self.alice, GW, log=False)
+        ids = [it["memo_id"] for s in ctx["sections"] if s["key"] == "instructions" for it in s["items"]]
+        self.assertEqual(ids[0], p)
+        ota = retrieval.build_context(self.alice, OTA, log=False)          # 다른 저장소에서는 전체 지시만 센다
+        self.assertEqual(ota["instruction_usage"]["over"], 0)
+        self.assertIn(g, [it["memo_id"] for s in ota["sections"] if s["key"] == "instructions" for it in s["items"]])
+
+    def test_global_instruction_counts_with_project_instructions(self):
+        # 전체 범위 지시는 모든 저장소에 들어가므로, 저장소 범위 지시와 합쳐 가장 많은 경우로 판단한다.
+        db.set_policy("injection", {"instruction_chars": 70})
+        self.inst("ble-gateway 테스트는 항상 make test-hw-sim으로 돌려 줘. pytest 직접 호출 금지", project_key=GW, scope="project")
+        r = self.inst("커밋 메시지 제목은 50자 이내로 써 줘")
+        self.assertIn("상한을 넘었습니다", r["message"])
+        self.assertIn("저장소 ble-gateway", r["message"])
+
+    def test_kind_change_to_instruction_reports_overflow(self):
+        db.set_policy("injection", {"instruction_chars": 60})
+        self.inst("커밋 메시지는 영어 명령형으로 써 줘. 예시는 Fix typo in README")
+        m = pipeline.remember(self.alice, "주석에는 이모지를 넣지 않는다. 검색과 grep이 어려워진다", do_analyze=False)["memo_id"]
+        r = pipeline.set_kind(self.alice, m, "instruction")
+        self.assertIn("상한을 넘었습니다", r["message"])
+
+    def test_zero_limit_disables_char_budget(self):
+        db.set_policy("injection", {"instruction_chars": 0})
+        for i in range(5):
+            r = self.inst(f"지시 {i}: " + "가" * 100)
+        self.assertNotIn("상한을 넘었습니다", r["message"])
+        ctx = retrieval.build_context(self.alice, None, log=False)
+        self.assertEqual(ctx["instruction_usage"]["over"], 0)
+
+    def test_team_instructions_do_not_count(self):
+        db.set_policy("injection", {"instruction_chars": 60})
+        t = pipeline.remember(self.alice, "팀 저장소 main에는 리뷰 승인 없이 병합하지 않는다. 예외 없음, 긴급 수정도 마찬가지다",
+                              kind="instruction", space_id=self.team, do_analyze=False)
+        self.assertNotIn("상한을 넘었습니다", t["message"])
+        self.assertEqual(retrieval.instruction_usage(self.alice["id"])["chars"], 0)
+
     def test_empty_space_injects_nothing(self):
         self.assertEqual(retrieval.build_context(self.bob, GW, log=False)["text"], "")
 
@@ -1216,6 +1281,12 @@ class TestHTTP(Base):
         self.assertEqual(d["stale_copies"], [])
         _, lst = self.call("GET", f"/api/memos?space_id={self.team}", tok="bob")
         self.assertEqual([m["origin_state"] for m in lst["memos"] if m["id"] == copy], ["changed"])
+
+    def test_agent_preview_exposes_instruction_usage(self):
+        pipeline.remember(self.alice, "답변은 한국어로 해 줘", kind="instruction", do_analyze=False)
+        _, d = self.call("GET", "/api/agent/preview")
+        self.assertEqual(d["instruction_usage"]["limit"], 1200)
+        self.assertEqual(d["instruction_usage"]["chars"], len("답변은 한국어로 해 줘"))
 
     def test_mark_used_accepts_common_argument_mistakes(self):
         a = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저")["memo_id"]
