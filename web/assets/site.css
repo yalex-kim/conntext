@@ -230,6 +230,7 @@ html.intro-open .topbar__mark { visibility: hidden; }
 .ff__f--free { background: repeating-linear-gradient(135deg, transparent 0 5px, var(--line) 5px 6px); color: var(--ink-2); font-weight: 500; }
 .ff__f--teamidx { background: var(--team-soft); color: var(--team-ink); }
 .ff__f--mineidx { background: var(--marker-soft); }
+.ff__f--mineproc { background: repeating-linear-gradient(90deg, var(--marker-soft) 0 5px, var(--marker-deep) 5px 6px); }
 .ff__f .ff__lbl { overflow: hidden; text-overflow: clip; }
 .ff__legend { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin-top: var(--s-3); font-size: var(--fs-2); line-height: 1.5; align-items: center; }
 .ff__legend dt { display: flex; align-items: center; gap: 10px; }

@@ -73,7 +73,7 @@ python3 /path/to/conntext/plugin/scripts/conntext.py status
 
 플러그인이 하는 일:
 
-- 훅: `SessionStart`에서 맥락(지시·선호, 팀 규칙, 이 저장소의 진행 상태, 주제 색인)을 넣고, `PreCompact`와 `SessionEnd`에서 대화록을 백그라운드로 올립니다. 훅은 에이전트를 기다리게 하지 않고, 실패하면 조용히 끝나며 `~/.conntext/client.log`에 남깁니다.
+- 훅: `SessionStart`에서 맥락(지시·선호, 팀 규칙, 이 저장소의 진행 상태, 절차 색인, 주제 색인)을 넣고, `PreCompact`와 `SessionEnd`에서 대화록을 백그라운드로 올립니다. 훅은 에이전트를 기다리게 하지 않고, 실패하면 조용히 끝나며 `~/.conntext/client.log`에 남깁니다.
 - MCP: `conntext.py mcp`가 표준 입출력 MCP를 서버의 `/mcp`로 중계하고, 도구 호출에 현재 저장소(`git remote origin`)를 `project`로 채워 넣습니다.
 - 명령어 다섯 개:
 
@@ -186,7 +186,7 @@ data/                기본 DB 위치
 ### 데이터 모델
 
 - `users`(역할: `user`, `operator`, `auditor`), `spaces`(`personal` 또는 `team`), `space_members`(팀 안 역할: `member`, `admin`), `tokens`(SHA-256 해시만 저장, `client`/`web`).
-- `memos`: 본문, 종류(`instruction` 지시·선호, `knowledge` 지식, `state` 진행 상태), 출처(`manual`, `session`, `import`, `promoted`), 신뢰(`high`, `low`=세션 후보, `temp`=진행 상태), 범위(`global` 또는 저장소별 `project`와 `project_key`), 상태(`active`, `superseded`, `duplicate`, `deleted`, `expired`, `dismissed`), 임베딩, 원본 권한 라벨 `source_acl`.
+- `memos`: 본문, 종류(`instruction` 지시·선호, `knowledge` 지식, `procedure` 절차, `state` 진행 상태), 절차의 `when_hint`(언제 쓰는지 한 줄), 출처(`manual`, `session`, `import`, `promoted`), 신뢰(`high`, `low`=세션 후보, `temp`=진행 상태), 범위(`global` 또는 저장소별 `project`와 `project_key`), 상태(`active`, `superseded`, `duplicate`, `deleted`, `expired`, `dismissed`), 임베딩, 원본 권한 라벨 `source_acl`.
 - `topics`와 `memo_topics`: 메모가 모이는 주제(위키) 문서. 본문은 메모로부터 생성합니다.
 - `links`(대체·중복·보충·관련), `entities`(사람, 시스템, 용어).
 - `sessions`: 에이전트 세션. 원본 JSONL이 아니라 발화와 도구 이름만 남긴 축약 대화록을 저장합니다. 상태 `open` → `uploaded` → `extracted` (또는 `excluded`).
@@ -202,11 +202,11 @@ data/                기본 DB 위치
 1. 마스킹: `<private>…</private>`를 지우고 정책 `masking_rules`의 정규식(키, 토큰, 비밀번호 대입, 주민번호, 휴대전화 번호 등)을 가립니다. 이 단계를 거친 본문만 DB에 닿습니다.
 2. 저장: 원문 그대로 저장하고 임베딩과 전문 검색 색인(FTS5 trigram)을 만듭니다.
 3. 분석: 같은 공간에서 비슷한 메모와 기존 주제 목록을 함께 LLM(또는 규칙)에 넘겨 종류, 제목, 개체, 가장 가까운 메모와의 관계(`duplicate`, `update`, `supplement`, `related`, `none`), 주제를 정합니다. 후보 메모는 LLM에는 유사도 컷 없이 검색 상위 5개에 같은 저장소의 최근 메모를 더해 최대 8개를 넘기고, 규칙 경로에는 유사도 0.1 이상인 상위 5개만 씁니다.
-4. 적용: 중복이면 기존 메모에 합치고, 갱신이면 기존 메모를 `superseded`로 돌리고, 보충이면 같은 주제에 붙입니다. 세션 후보(`low`)는 사람이 적은 메모를 대체하지 못하고 보충으로 낮춰집니다. 지식이면 주제에 넣고(없으면 새로 만들고), 진행 상태면 보존 기간(기본 14일)을 붙입니다.
+4. 적용: 중복이면 기존 메모에 합치고, 갱신이면 기존 메모를 `superseded`로 돌리고, 보충이면 같은 주제에 붙입니다. 세션 후보(`low`)는 사람이 적은 메모를 대체하지 못하고 보충으로 낮춰집니다. 지식이면 지식 문서에, 절차면 절차 문서에 넣고(없으면 새로 만들고, 두 종류의 문서는 섞지 않습니다), 진행 상태면 보존 기간(기본 14일)을 붙입니다. 절차에는 언제 쓰는지 한 줄(`when_hint`)이 붙고, 세션 시작 때는 `- 언제 → 절차 제목 [t:N]`만 절차 색인으로 들어갑니다. 에이전트는 그 작업을 할 때 `get_topic`으로 본문을 꺼내 따릅니다.
 5. 주제 문서 갱신: 바뀐 주제를 작업 대기열에 넣고, 워커가 본문을 다시 만듭니다.
 6. 결과: 사람이 읽는 한 줄(`저장됨 m:… → [주제] · 종류 · 범위`)과 되돌리기용 이벤트를 돌려줍니다.
 
-자동 분류된 종류가 틀렸으면 `PUT /api/memos/<id>`에 본문 없이 `{"kind": "knowledge"}`처럼 종류만 보내 제자리에서 바꿉니다. 지식이 되면 주제 문서에 들어가고, 지시나 진행 상태가 되면 주제에서 빠집니다. 진행 상태가 되면 보존 기간이 붙고, 진행 상태에서 벗어나면 없어집니다. 이 변경도 되돌리기 내역에 남습니다. 본문 `text`를 보내면 지금처럼 새 판을 만들어 이전 판을 대체합니다.
+자동 분류된 종류가 틀렸으면 `PUT /api/memos/<id>`에 본문 없이 `{"kind": "knowledge"}`처럼 종류만 보내 제자리에서 바꿉니다. 지식이나 절차가 되면 그 종류의 주제 문서로 옮겨지고, 지시나 진행 상태가 되면 주제에서 빠집니다. 절차의 '언제 쓰는지'는 `{"when": "스테이징에 배포할 때"}`로 제자리에서 고칩니다(되돌릴 수 있음). 진행 상태가 되면 보존 기간이 붙고, 진행 상태에서 벗어나면 없어집니다. 이 변경도 되돌리기 내역에 남습니다. 본문 `text`를 보내면 지금처럼 새 판을 만들어 이전 판을 대체합니다.
 
 세션 대화록은 업로드 → 마스킹과 축약 → 작업 대기열 → 추출(요약, 진행 상태, 지식 후보 최대 5개) 순서로 처리됩니다. 진행 상태는 저장소마다 최신 하나만 유효합니다.
 
@@ -270,7 +270,7 @@ curl -s -X PUT  $S/api/admin/teams/<팀 id>/members -H "$H" -H 'Content-Type: ap
 | `masking_rules` | 마스킹 정규식 목록(`{name, pattern}`) |
 | `capture` | `platforms`, `excluded_projects`(부분 문자열 일치), `max_transcript_chars` 400000 |
 | `retention` | 대화록 90일(에이전트의 `search_sessions` 검색 대상), 쓰이지 않은 후보 30일, 진행 상태 14일, 후보 자동 승격 사용 횟수 2 |
-| `injection` | 세션 시작 맥락 토큰 예산 1500, 지시 최대 12개·1,200자, 주제 최대 40개(색인은 제목만 넣으므로 보통 예산이 먼저 개수를 정한다) |
+| `injection` | 세션 시작 맥락 토큰 예산 1500, 지시 최대 12개·1,200자, 절차 색인 최대 20개, 주제 최대 40개(색인은 제목만 넣으므로 보통 예산이 먼저 개수를 정한다) |
 | `budget` | 사용자별 최근 24시간 LLM 토큰 400000. 넘으면 규칙 기반으로 처리 |
 | `clients` | 최소 플러그인 버전 |
 

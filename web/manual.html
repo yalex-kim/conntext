@@ -172,7 +172,13 @@
             <li><code>이미 있는 메모와 같은 내용이라 새로 만들지 않고 m:N에 합쳤습니다</code></li>
             <li><code>새 주제 문서를 만들었습니다.</code>, <code>민감 정보 N건을 마스킹했습니다.</code></li>
           </ul>
-          <p><b>내용 없이 부르면</b> 에이전트가 이번 세션에서 남길 만한 것(결정과 이유, 찾아낸 원인, 저장소의 규칙이나 함정, 밝힌 선호)을 많아야 다섯 개 골라 번호를 붙여 제안합니다. 고른 것만 저장하고, 고르기 전에는 아무것도 저장하지 않습니다.</p>
+          <p><b>작업 방법은 절차로 저장됩니다.</b> 순서와 명령이 있는 메모(“배포하려면 먼저 … 그다음 …”, 번호 매긴 단계)는 <b>절차</b>로 분류되고, 언제 쓰는 절차인지 한 줄(<i>언제</i>)이 함께 붙습니다. 절차는 지식과 다른 절차 문서에 모이고, 세션을 시작할 때 “언제 → 절차 제목”만 들어갑니다. 에이전트는 그 작업을 하게 되면 시작하기 전에 절차 문서를 꺼내 따릅니다.</p>
+          <div class="term term--wrap">
+            <div class="term__head"><span class="term__title">Claude Code · 절차 저장</span></div>
+<pre><span class="term__line"><span class="term__prompt">&gt; </span>/conntext:remember 게이트웨이 재시작 순서: mqtt-broker 먼저, 그 다음 ble-bridge. 반대로 하면 bridge가 재연결 폭주를 일으킨다</span><span class="term__line term__ok">저장됨 m:7 → [게이트웨이 재시작 순서] · 절차(언제: 게이트웨이 재시작할 때) · 범위: 저장소 ble-gateway</span></pre>
+          </div>
+          <p><i>언제</i>는 에이전트가 절차를 꺼낼지 정하는 유일한 단서라, 흐릿하면 웹의 메모 화면에서 “언제 쓰는지 → 고치기”로 작업이나 증상을 구체적으로 고칩니다(예: “스테이징에 배포할 때”, “로그인 테스트가 타임아웃으로 실패할 때”). 세션 기록에서도 시행착오 끝에 성공한 작업 방법이나 사용자가 바로잡은 방법이 절차 후보로 뽑힙니다.</p>
+          <p><b>내용 없이 부르면</b> 에이전트가 이번 세션에서 남길 만한 것(결정과 이유, 찾아낸 원인, 저장소의 규칙이나 함정, 검증된 작업 방법, 밝힌 선호)을 많아야 다섯 개 골라 번호를 붙여 제안합니다. 고른 것만 저장하고, 고르기 전에는 아무것도 저장하지 않습니다.</p>
           <p>분류가 틀렸으면 <code>/forget last</code>로 되돌립니다. 기존 메모의 내용이 틀렸다고 말하면 에이전트가 고친 내용을 새 메모로 저장하고 이전 메모를 대체됨으로 남깁니다.</p>
         </div>
       </section>
@@ -294,9 +300,9 @@
             <table class="table">
               <thead><tr><th scope="col">등급</th><th scope="col">생기는 경로</th><th scope="col">세션 시작 때</th><th scope="col"><code>/recall</code>에서</th><th scope="col">유지</th></tr></thead>
               <tbody>
-                <tr><td><span class="tag tag--mine">m:12</span>내 메모</td><td><code>/remember</code>, 웹 입력, 확인한 후보</td><td>지시·선호는 항상 넣고(최대 12건, 합쳐 1,200자. 넘으면 알리고, 들어가지 않는 지시는 빠짐), 지식은 주제 색인에 제목만(예산 안에서 최대 40개 주제, 자주 쓰인 주제 먼저)</td><td>[내 메모]</td><td>지울 때까지</td></tr>
+                <tr><td><span class="tag tag--mine">m:12</span>내 메모</td><td><code>/remember</code>, 웹 입력, 확인한 후보</td><td>지시·선호는 항상 넣고(최대 12건, 합쳐 1,200자. 넘으면 알리고, 들어가지 않는 지시는 빠짐), 절차는 절차 색인에 “언제 → 제목”만(최대 20개), 지식은 주제 색인에 제목만(예산 안에서 최대 40개 주제, 자주 쓰인 주제 먼저)</td><td>[내 메모]</td><td>지울 때까지</td></tr>
                 <tr><td><span class="tag tag--state">m:34</span>진행 상태</td><td><code>/handoff</code>, 세션 종료 때 자동</td><td>이 저장소의 최신 1건</td><td>[진행 상태]</td><td>저장소마다 최신 1건, 14일 뒤 만료</td></tr>
-                <tr><td><span class="tag tag--team">m:37</span>팀 지식</td><td>동료가 팀으로 공유</td><td>팀 규칙(지시) 최근 6건, 팀 지식 색인(최대 5개 주제)</td><td>[팀 지식 · 작성자]</td><td>팀 공간에 남음</td></tr>
+                <tr><td><span class="tag tag--team">m:37</span>팀 지식</td><td>동료가 팀으로 공유</td><td>팀 규칙(지시) 최근 6건, 팀 절차 색인(최대 10개), 팀 지식 색인(최대 20개 주제)</td><td>[팀 지식 · 작성자]</td><td>팀 공간에 남음</td></tr>
                 <tr><td><span class="tag tag--candidate">m:49</span>후보</td><td>세션 자동 추출</td><td>넣지 않음</td><td>[세션 자동 추출·미확인], 순위를 낮춤</td><td>정식이 되거나 30일 뒤 만료(5.2)</td></tr>
                 <tr><td><span class="tag tag--superseded">m:4</span>대체됨</td><td>갱신 판정, 고치기</td><td>넣지 않음</td><td>나오지 않음</td><td>이력에 남음</td></tr>
               </tbody>
@@ -309,7 +315,11 @@
       <section class="sub" aria-labelledby="s4-2">
         <h3 id="s4-2"><a class="subno" href="#s4-2">4.2</a>세션 시작 블록</h3>
         <div class="prose">
-          <p>세션이 시작되면 Conntext가 블록 하나를 에이전트에 넣습니다. 구역 순서는 안내 문구, 지시·선호, 팀 규칙, 진행 상태, 내 지식 색인, 팀 지식 색인이고, 기본 예산 1,500 토큰 안에서 위에서부터 채웁니다. 예산을 넘는 항목은 그 구역의 뒤쪽부터 빠집니다. 색인에는 주제 제목과 한 줄만 들어가고, 에이전트가 필요할 때 <code>[t:31]</code> 같은 표시로 본문을 꺼냅니다.</p>
+          <p>세션이 시작되면 Conntext가 블록 하나를 에이전트에 넣습니다. 구역 순서는 안내 문구, 지시·선호, 팀 규칙, 진행 상태, 내 절차 색인, 팀 절차 색인, 내 지식 색인, 팀 지식 색인이고, 기본 예산 1,500 토큰 안에서 위에서부터 채웁니다. 예산을 넘는 항목은 그 구역의 뒤쪽부터 빠집니다. 색인에는 본문이 들어가지 않고, 에이전트가 필요할 때 <code>[t:31]</code> 같은 표시로 본문을 꺼냅니다.</p>
+          <ul>
+            <li><b>절차 색인</b>은 <code>- 게이트웨이 재시작할 때 → 게이트웨이 재시작 순서 [t:3]</code>처럼 언제 쓰는지와 제목을 넣습니다. 에이전트는 그 작업을 시작하기 전에 절차를 꺼냅니다. 지식 색인보다 앞에 있어, 예산이 모자라면 지식 색인이 먼저 줄어듭니다.</li>
+            <li><b>지식 색인</b>은 주제 제목만 넣습니다. 지금 작업과 관련 있어 보일 때 에이전트가 검색하거나 꺼냅니다.</li>
+          </ul>
           <figure class="ff" aria-labelledby="ff2-cap">
             <div class="ff__ruler" aria-hidden="true"><span style="left:0">0</span><span class="minor" style="left:16.667%">250</span><span style="left:33.333%">500</span><span class="minor" style="left:50%">750</span><span style="left:66.667%">1000</span><span class="minor" style="left:83.333%">1250</span><span style="left:100%">1500</span></div>
             <div class="ff__bar" aria-hidden="true">
@@ -317,18 +327,20 @@
               <span class="ff__f ff__f--mine" style="--w:10.2%"><span class="ff__lbl">지시·선호</span></span>
               <span class="ff__f ff__f--team" style="--w:3%"></span>
               <span class="ff__f ff__f--state" style="--w:8.13%"><span class="ff__lbl">진행 상태</span></span>
+              <span class="ff__f ff__f--mineproc" style="--w:2.47%"></span>
               <span class="ff__f ff__f--mineidx" style="--w:28.73%"><span class="ff__lbl">내 지식 색인 · 8개 주제</span></span>
               <span class="ff__f ff__f--teamidx" style="--w:18.4%"><span class="ff__lbl">팀 지식 색인 · 5개</span></span>
-              <span class="ff__f ff__f--free" style="--w:24.94%"><span class="ff__lbl">남은 예산</span></span>
+              <span class="ff__f ff__f--free" style="--w:22.47%"><span class="ff__lbl">남은 예산</span></span>
             </div>
             <dl class="ff__legend">
               <dt><i class="ff__f--meta" aria-hidden="true"></i>안내 문구(머리·끝)</dt><dd class="num">99</dd>
               <dt><i class="ff__f--mine" aria-hidden="true"></i>지시·선호 4건</dt><dd class="num">153</dd>
               <dt><i class="ff__f--team" aria-hidden="true"></i>팀 규칙 1건</dt><dd class="num">45</dd>
               <dt><i class="ff__f--state" aria-hidden="true"></i>진행 상태 1건</dt><dd class="num">122</dd>
+              <dt><i class="ff__f--mineproc" aria-hidden="true"></i>내 절차 색인 1개</dt><dd class="num">37</dd>
               <dt><i class="ff__f--mineidx" aria-hidden="true"></i>내 지식 색인 8개 주제</dt><dd class="num">431</dd>
               <dt><i class="ff__f--teamidx" aria-hidden="true"></i>팀 지식 색인 5개 주제</dt><dd class="num">276</dd>
-              <dt class="sum"><i class="ff__f--free" aria-hidden="true"></i>합계 / 예산</dt><dd class="num sum">1,126 / 1,500</dd>
+              <dt class="sum"><i class="ff__f--free" aria-hidden="true"></i>합계 / 예산</dt><dd class="num sum">1,163 / 1,500</dd>
             </dl>
             <figcaption id="ff2-cap"><b>그림 4.2</b> 세션 시작 블록의 구성(예시: 데모 계정, ble-gateway 저장소). 칸 너비가 토큰 수, 위 눈금이 예산입니다. 토큰 수는 한글 한 글자를 1토큰, 그 밖의 글자는 3.6자를 1토큰으로 어림합니다.</figcaption>
           </figure>

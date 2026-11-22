@@ -46,7 +46,7 @@ TOOLS = [
      "description": "메모 id로 전문과 이력(대체 관계, 소속 주제)을 가져온다. 세션 시작 색인이나 recall 결과의 [m:숫자]를 자세히 볼 때 쓴다.",
      "inputSchema": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "integer"}}}, "required": ["ids"]}},
     {"name": "get_topic",
-     "description": "주제 문서 하나의 본문을 가져온다. 세션 시작 색인의 [t:숫자]를 펼칠 때 쓴다.",
+     "description": "주제 문서 하나의 본문을 가져온다. 세션 시작 색인의 [t:숫자]를 펼칠 때 쓴다. 절차 색인에 있는 작업을 하게 되면 시작하기 전에 이것으로 절차를 꺼낸다.",
      "inputSchema": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}},
     {"name": "resume",
      "description": "이 저장소에서 지난 세션이 남긴 진행 상태(끝낸 일, 남은 일)와 관련 메모를 가져온다. 사용자가 이어서 하자고 하거나 /resume을 썼을 때 호출한다.",
@@ -98,6 +98,9 @@ def fmt_memo(r):
     else:
         tag = "[내 메모]"
     topic = f", 주제: {r['topics'][0]['title']}" if r.get("topics") else ""
+    if r.get("kind") == "procedure":
+        # 절차는 꺼내 따르는 것이라, 언제 쓰는지를 머리에 붙인다(#16).
+        tag += " 절차" + (f" · 언제: {r['when']}" if r.get("when") else "")
     return f"{tag} m:{r['id']} ({_date(r['created_at'])}{topic})\n{r['body']}"
 
 
@@ -108,7 +111,8 @@ def fmt_recall(res):
     out += [fmt_memo(r) for r in res["results"]]
     for t in res["topics"]:
         where = "팀" if t["space_kind"] == "team" else "내"
-        out.append(f"── {where} 주제 문서 [t:{t['id']}] {t['title']}\n{t['summary'][:900]}")
+        doc = "절차 문서" if t.get("kind") == "procedure" else "주제 문서"
+        out.append(f"── {where} {doc} [t:{t['id']}] {t['title']}\n{t['summary'][:900]}")
     out.append("답에 쓴 메모는 mark_used로 알려 주세요.")
     return "\n\n".join(out)
 
@@ -233,7 +237,14 @@ def call_tool(user, name, a, session_ext_id=None):
         if not t:
             raise NotFound("주제를 찾을 수 없습니다.")
         access.require_read(user, t["space_id"])
-        return f"# {t['title']}\n\n{t['summary'] or '(아직 본문이 없습니다)'}"
+        # 꺼내 본 문서의 메모를 사용 기록에 남긴다. 세션 시작 색인은 이 기록으로 자주 쓰는 주제·절차를 앞에 둔다.
+        now = db.now()
+        for r in db.q("SELECT m.id FROM memos m JOIN memo_topics mt ON mt.memo_id=m.id WHERE mt.topic_id=? AND m.status='active'", t["id"]):
+            db.insert("memo_uses", memo_id=r["id"], user_id=user["id"], kind="recall", session_ext_id=session_ext_id, created_at=now)
+        head = f"# {t['title']}"
+        if t["kind"] == "procedure":
+            head += "\n(절차 문서: 아래 순서와 주의점을 따른다. 따라 해 보니 틀린 점이 있으면 사용자에게 알리고 remember의 replaces로 고친다.)"
+        return f"{head}\n\n{t['summary'] or '(아직 본문이 없습니다)'}"
     if name == "resume":
         return fmt_resume(retrieval.resume(user, project))
     if name == "handoff":

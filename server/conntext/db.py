@@ -15,7 +15,22 @@ def configure(path=None):
         Path(_path).parent.mkdir(parents=True, exist_ok=True)
     close()
     conn().executescript((Path(__file__).parent / "schema.sql").read_text())
+    _migrate()
     conn().commit()
+
+
+# 기존 DB에 없는 열을 더한다. CREATE TABLE IF NOT EXISTS는 이미 있는 표를 고치지 않는다.
+MIGRATIONS = [
+    ("memos", "when_hint", "TEXT"),
+    ("topics", "kind", "TEXT NOT NULL DEFAULT 'knowledge'"),
+]
+
+
+def _migrate():
+    c = conn()
+    for table, col, decl in MIGRATIONS:
+        if col not in {r[1] for r in c.execute(f"PRAGMA table_info({table})")}:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
 
 def conn():
@@ -98,7 +113,7 @@ DEFAULT_POLICIES = {
     ],
     "capture": {"platforms": ["claude-code", "opencode", "connpass"], "excluded_projects": [], "max_transcript_chars": 400000},
     "retention": {"transcript_days": 90, "candidate_days": 30, "state_days": 14, "candidate_promote_uses": 2},
-    "injection": {"token_budget": 1500, "max_instructions": 12, "instruction_chars": 1200, "max_topics": 40},
+    "injection": {"token_budget": 1500, "max_instructions": 12, "instruction_chars": 1200, "max_procedures": 20, "max_topics": 40},
     # 예산을 넘으면 최근 24시간 사용량이 다시 예산 아래로 내려갈 때까지 규칙 기반으로 처리한다(llm._over_budget).
     "budget": {"daily_tokens_per_user": 400000},
     "clients": {"min_plugin_version": config.MIN_PLUGIN_VERSION},

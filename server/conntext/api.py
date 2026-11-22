@@ -60,7 +60,7 @@ def auth_user(headers):
 # ── 공용 뷰 ─────────────────────────────────────────────────────────
 MEMO_COLS = ("m.id, m.space_id, m.author_id, m.body, m.title, m.kind, m.source, m.trust, m.scope, m.project_key, m.status, "
              "m.superseded_by, m.origin_memo_id, m.origin_session_id, m.source_acl, m.masked_count, m.use_count, m.last_used_at, "
-             "m.created_at, m.updated_at, m.expires_at")
+             "m.created_at, m.updated_at, m.expires_at, m.when_hint")
 
 
 def memo_rows(where, *args, limit=200, order="m.created_at DESC"):
@@ -74,7 +74,7 @@ def decorate(m):
     m["origin_state"] = pipeline.origin_state(m) if m["space_kind"] == "team" else None
     m["project"] = pipeline.short_project(m["project_key"])
     m["source_acl"] = db.js(m["source_acl"], [])
-    m["topics"] = db.q("SELECT t.id, t.title FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", m["id"])
+    m["topics"] = db.q("SELECT t.id, t.title, t.kind FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", m["id"])
     return m
 
 
@@ -111,8 +111,8 @@ def event_view(e):
             "relation": d.get("relation"), "target": target, "topics": topics, "created_topic": bool(d.get("created_topic_ids")),
             "masked": d.get("masked", 0), "prev_kind": d.get("prev_kind"),
             # 이벤트 당시 기록된 종류(kind_change면 바꾼 뒤 종류). 메모의 현재 종류는 memo.kind에 있다.
-            "kind": d.get("kind"),
-            "undoable": e["undone_at"] is None and e["action"] in ("remember", "forget", "confirm", "dismiss", "promote", "auto_promoted", "kind_change")}
+            "kind": d.get("kind"), "when": d.get("when"), "prev_when": d.get("prev_when"),
+            "undoable": e["undone_at"] is None and e["action"] in ("remember", "forget", "confirm", "dismiss", "promote", "auto_promoted", "kind_change", "when_change")}
 
 
 # ── 계정 ────────────────────────────────────────────────────────────
@@ -196,8 +196,8 @@ def export(req):
     pid = access.personal_space_id(req.user["id"])
     db.audit(req.user["id"], "export", "space", pid, pid)
     return {"exported_at": db.now(), "user": req.user["email"],
-            "memos": db.q("SELECT id, body, title, kind, source, trust, scope, project_key, status, superseded_by, created_at FROM memos WHERE space_id=? AND status!='deleted' ORDER BY id", pid),
-            "topics": db.q("SELECT id, title, summary, project_key FROM topics WHERE space_id=? ORDER BY id", pid),
+            "memos": db.q("SELECT id, body, title, kind, when_hint, source, trust, scope, project_key, status, superseded_by, created_at FROM memos WHERE space_id=? AND status!='deleted' ORDER BY id", pid),
+            "topics": db.q("SELECT id, title, kind, summary, project_key FROM topics WHERE space_id=? ORDER BY id", pid),
             "sessions": db.q("SELECT platform, project_key, started_at, ended_at, summary, handoff FROM sessions WHERE user_id=? ORDER BY id", req.user["id"])}
 
 
@@ -224,7 +224,7 @@ def home(req):
     }
     if kind == "team":
         feed = memo_rows("m.space_id=? AND m.status='active'", sid, limit=12)
-        top = db.q("SELECT t.id, t.title, COUNT(mu.id) AS refs, t.updated_at FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id "
+        top = db.q("SELECT t.id, t.title, t.kind, COUNT(mu.id) AS refs, t.updated_at FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id "
                    "LEFT JOIN memo_uses mu ON mu.memo_id=mt.memo_id AND mu.kind IN ('recall','used') WHERE t.space_id=? GROUP BY t.id ORDER BY refs DESC, t.updated_at DESC LIMIT 6", sid)
         members = db.q("SELECT u.id, u.name, m.role, (SELECT COUNT(*) FROM memos x WHERE x.space_id=? AND x.author_id=u.id AND x.status='active') AS memos "
                        "FROM space_members m JOIN users u ON u.id=m.user_id WHERE m.space_id=? ORDER BY memos DESC, u.name", sid, sid)
@@ -349,10 +349,14 @@ def memo_edit(req, mid):
     # 본문 없이 종류만 오면 제자리에서 종류만 바꾼다. 종류는 원문이 아니라 파생 정보다.
     if "text" not in req.body and req.body.get("kind"):
         return pipeline.set_kind(req.user, m["id"], req.body["kind"])
+    # 절차의 '언제 쓰는지'도 파생 정보라 제자리에서 고친다(#16).
+    if "text" not in req.body and "when" in req.body:
+        return pipeline.set_when(req.user, m["id"], req.body["when"])
     # 원문은 고치지 않는다. 고친 내용을 새 메모로 저장하고 이전 판을 대체한다.
     return pipeline.remember(req.user, req.body.get("text", ""), space_id=m["space_id"], scope=m["scope"], project_key=m["project_key"],
                              kind=m["kind"], source=m["source"] if m["source"] != "session" else "manual",
-                             origin_memo_id=m["origin_memo_id"], replaces_id=m["id"])
+                             origin_memo_id=m["origin_memo_id"], replaces_id=m["id"],
+                             when=m["when_hint"] if m["kind"] == "procedure" else None)   # 사용자가 고친 '언제'를 새 판이 잃지 않게
 
 
 @route("DELETE", r"/api/memos/(\d+)")
@@ -387,7 +391,7 @@ def import_(req):
 @route("GET", "/api/topics")
 def topics(req):
     sid = space_of(req)
-    rows = db.q("SELECT t.id, t.title, t.project_key, t.updated_at, t.dirty, substr(t.summary,1,200) AS excerpt, "
+    rows = db.q("SELECT t.id, t.title, t.kind, t.project_key, t.updated_at, t.dirty, substr(t.summary,1,200) AS excerpt, "
                 "SUM(m.status='active') AS memos, SUM(m.status='active' AND m.trust='low') AS unconfirmed, COUNT(DISTINCT CASE WHEN m.status='active' THEN m.author_id END) AS authors "
                 "FROM topics t LEFT JOIN memo_topics mt ON mt.topic_id=t.id LEFT JOIN memos m ON m.id=mt.memo_id "
                 "WHERE t.space_id=? GROUP BY t.id HAVING memos>0 ORDER BY t.updated_at DESC", sid)

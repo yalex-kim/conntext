@@ -218,7 +218,9 @@ def extract(session_id):
         text = (c.get("text") or "").strip()
         if len(text) < 10:
             continue
-        r = pipeline.remember(user, text, project_key=s["project_key"], kind=None if c.get("kind") != "instruction" else "instruction",
+        # knowledge는 분석에 맡긴다(같은 사안의 기존 메모를 따라가도록). instruction·procedure는 추출 판정을 그대로 쓴다.
+        kind = c.get("kind") if c.get("kind") in ("instruction", "procedure") else None
+        r = pipeline.remember(user, text, project_key=s["project_key"], kind=kind, when=c.get("when") if kind == "procedure" else None,
                               source="session", trust="low", origin_session_id=session_id, source_acl=s["source_acl"])
         if r["status"] == "active":
             created.append(r["memo_id"])

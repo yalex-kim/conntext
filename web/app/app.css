@@ -444,6 +444,9 @@ button.cite:hover { filter: brightness(0.95); }
 .f-state { background: var(--state); color: var(--ink); }
 .f-mine-idx { background: var(--marker-soft); color: var(--ink); }
 .f-team-idx { background: var(--team-soft); color: var(--team-ink); }
+/* 절차 색인: 같은 등급의 지식 색인과 색은 같고, 단계 눈금 무늬로 구분한다. */
+.f-mine-proc { background: repeating-linear-gradient(90deg, var(--marker-soft) 0 7px, var(--marker-deep) 7px 8px); color: var(--ink); }
+.f-team-proc { background: repeating-linear-gradient(90deg, var(--team-soft) 0 7px, var(--team-ink) 7px 8px); color: var(--team-ink); }
 .f-free { background: transparent; color: var(--ink-2); border-right: 0; }
 .f-free .ff__fname { font-weight: 600; }
 .swatch.f-team .num { color: #fff; }
@@ -595,3 +598,10 @@ button.cite:hover { filter: brightness(0.95); }
 .pm-replaces { display: flex; gap: 6px; align-items: flex-start; margin: var(--s-2) 0 0; font-size: var(--fs-2); color: var(--ink-2); }
 .pm-replaces s { color: var(--ink-2); }
 .asec__usage { font-size: var(--fs-2); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* 절차(#16) */
+.whenform { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: 100%; }
+.whenform .input { flex: 1 1 260px; min-width: 0; }
+.whenform__hint { flex-basis: 100%; margin: 0; font-size: var(--fs-1); color: var(--ink-2); }
+.when { font-weight: 600; }
+.chip--proc { border-style: solid; border-color: var(--ink); font-weight: 600; }

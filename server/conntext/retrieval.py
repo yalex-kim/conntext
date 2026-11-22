@@ -89,7 +89,7 @@ def _memo_view(m):
         "id": m["id"], "tier": m["tier"], "label": TIER_LABEL[m["tier"]], "space": m["space_name"],
         "author": m["author_name"], "kind": m["kind"], "scope": m["scope"], "project_key": m["project_key"],
         "created_at": m["created_at"], "title": m["title"], "body": m["body"], "score": m["score"],
-        "origin_state": m.get("origin_state"),
+        "origin_state": m.get("origin_state"), "when": m.get("when_hint"),
         "topics": topics,
     }
 
@@ -117,7 +117,7 @@ def recall(user, query, project_key=None, session_ext_id=None, limit=6, log=True
             if t["id"] not in topic_ids:
                 topic_ids.append(t["id"])
     for tid in topic_ids[:3]:
-        t = db.one("SELECT t.id, t.title, t.summary, s.kind AS space_kind, s.name AS space FROM topics t JOIN spaces s ON s.id=t.space_id WHERE t.id=?", tid)
+        t = db.one("SELECT t.id, t.title, t.summary, t.kind, s.kind AS space_kind, s.name AS space FROM topics t JOIN spaces s ON s.id=t.space_id WHERE t.id=?", tid)
         if t and t["summary"]:
             topics.append(t)
     ms = (time.time() - t0) * 1000
@@ -166,7 +166,7 @@ def resume(user, project_key=None):
         other = latest_state(user["id"], None)
     related = []
     if st:
-        related = [_memo_view(m) for m in search(access.space_ids(user["id"]), st["body"], project_key, limit=4, exclude_ids=(st["id"],), kinds=("knowledge", "instruction"))]
+        related = [_memo_view(m) for m in search(access.space_ids(user["id"]), st["body"], project_key, limit=4, exclude_ids=(st["id"],), kinds=("knowledge", "procedure", "instruction"))]
     return {"project_key": project_key, "state": _state_view(st), "other_project_state": _state_view(other), "related": related}
 
 
@@ -239,8 +239,10 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
     if st:
         sections.append({"key": "state", "title": "지난 세션에서 이어받은 진행 상태", "tier": "state",
                          "items": [{"memo_id": st["id"], "text": st["body"], "tag": st.get("platform")}]})
-    # 3. 주제 색인: 본문은 넣지 않고 제목과 한 줄만. 상세는 recall로 꺼낸다.
-    def topic_rows(space_filter, sargs, lim):
+    # 3. 절차 색인(#16): '언제 쓰는지 → 절차 제목'만 넣는다. 에이전트가 그 작업을 하게 되면 get_topic으로 꺼내 따른다.
+    #    지식 색인보다 앞에 둔다. 예산이 모자라면 지식 색인이 먼저 잘린다. 절차는 모르고 지나치면 같은 실수를 되풀이한다.
+    # 4. 지식 색인: 본문은 넣지 않고 제목만. 상세는 recall로 꺼낸다.
+    def topic_rows(space_filter, sargs, lim, kind="knowledge"):
         cond = "(t.project_key IS NULL OR t.project_key=?)" if project_key else "t.project_key IS NULL"
         # 사람이 확인하지 않은 세션 추출 후보만 있는 주제는 색인에 넣지 않는다.
         # 순서: 이 저장소의 주제 → 최근 30일 동안 에이전트가 꺼내 쓴 횟수 → 최근 변경.
@@ -250,9 +252,21 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
                     f"(SELECT COUNT(*) FROM memo_uses u JOIN memo_topics ut ON ut.memo_id=u.memo_id "
                     f" WHERE ut.topic_id=t.id AND u.kind IN ('recall','used') AND u.created_at>=?) AS uses "
                     f"FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id JOIN memos m ON m.id=mt.memo_id AND m.status='active' AND m.trust!='low' "
-                    f"WHERE {space_filter} AND {cond} GROUP BY t.id "
+                    f"WHERE {space_filter} AND {cond} AND t.kind=? GROUP BY t.id "
                     f"ORDER BY (t.project_key IS NOT NULL) DESC, uses DESC, last DESC LIMIT ?",
-                    since, *sargs, *((project_key,) if project_key else ()), lim)
+                    since, *sargs, *((project_key,) if project_key else ()), kind, lim)
+
+    def proc_items(rows):
+        return [{"topic_id": t["id"], "text": f"{w} → {t['title']}" if (w := _when_line(t["id"])) else t["title"]} for t in rows]
+    max_proc = int(pol.get("max_procedures", 20) or 0)
+    if max_proc:
+        mp = topic_rows("t.space_id=?", (pid,), max_proc, "procedure")
+        if mp:
+            sections.append({"key": "procedures", "title": "내 절차 색인", "tier": "mine", "items": proc_items(mp)})
+        if team_ids:
+            tp = topic_rows(f"t.space_id IN ({','.join('?' * len(team_ids))})", tuple(team_ids), max(3, max_proc // 2), "procedure")
+            if tp:
+                sections.append({"key": "team_procedures", "title": "팀 절차 색인", "tier": "team", "items": proc_items(tp)})
     mine = topic_rows("t.space_id=?", (pid,), pol["max_topics"])
     if mine:
         sections.append({"key": "topics", "title": "내 지식 색인", "tier": "mine",
@@ -264,8 +278,11 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
                              "items": [{"topic_id": t["id"], "text": _topic_line(t), "tag": f"메모 {t['n']}건"} for t in tt]})
 
     head = "# Conntext\n이 사용자가 쌓아 둔 맥락이다. 지식 색인에는 주제 제목만 실었다. 지금 작업과 관련 있어 보이는 주제가 있으면 conntext의 `recall` 도구로 찾거나 `get_topic`에 [t:번호]를 넣어 본문을 꺼내 쓴다.\n"
+    # 절차 안내는 절차 색인이 실제로 들어갈 때만 붙인다. 자리는 미리 잡아 두고, 다 잘리면 돌려받는다.
+    proc_note = "절차 색인의 '언제'에 해당하는 작업을 하게 되면, 시작하기 전에 `get_topic`으로 그 절차를 꺼내 순서와 주의점을 따른다.\n" \
+        if any(s["key"] in ("procedures", "team_procedures") for s in sections) else ""
     foot = "\n메모를 답에 썼으면 `mark_used`로 알린다. 사용자가 틀렸다고 하면 `remember`로 고친 내용을 저장한다.\n"
-    used = est_tokens(head) + est_tokens(foot)
+    used = est_tokens(head) + est_tokens(foot) + (est_tokens(proc_note) if proc_note else 0)
     kept = []
     for sec in sections:
         title_cost = est_tokens(sec["title"]) + 4
@@ -283,6 +300,10 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
             kept.append({**sec, "items": items, "tokens": cost, "dropped": dropped})
         elif sec["items"] or sec.get("over_limit"):
             kept.append({**sec, "items": [], "tokens": 0, "dropped": dropped})
+    if proc_note and not any(sec["items"] for sec in kept if sec["key"] in ("procedures", "team_procedures")):
+        used -= est_tokens(proc_note)
+        proc_note = ""
+    head += proc_note
     # 지시가 상한 때문에 빠졌다는 안내는 내용을 채운 뒤 남은 예산 안에서만 붙인다(리뷰 PR #21).
     # 긴 안내가 안 들어가면 짧은 안내, 그것도 안 들어가면 생략한다. 예산이 내용보다 안내에 쓰이지 않게 한다.
     notice = ""
@@ -319,6 +340,13 @@ def build_context(user, project_key=None, platform=None, session_ext_id=None, lo
     usage_out = {"chars": usage["chars"], "limit": usage["limit"], "count": len(usage["items"]), "injected": len(inst), "over": over}
     return {"text": "" if empty else text, "tokens": 0 if empty else used, "budget": budget, "sections": kept, "instruction_usage": usage_out,
             "memo_ids": memo_ids, "topic_ids": topic_ids, "ms": round(ms, 1), "project_key": project_key}
+
+
+def _when_line(topic_id, n=3):
+    """절차 문서의 '언제 쓰는지': 확인된 절차 메모들의 when을 최근 것부터 최대 n개 잇는다."""
+    rows = db.q("SELECT m.when_hint FROM memos m JOIN memo_topics mt ON mt.memo_id=m.id WHERE mt.topic_id=? AND m.status='active' "
+                "AND m.trust!='low' AND m.kind='procedure' AND m.when_hint IS NOT NULL AND m.when_hint!='' ORDER BY m.created_at DESC", topic_id)
+    return " / ".join(list(dict.fromkeys(r["when_hint"] for r in rows))[:n])
 
 
 def _topic_line(t):
