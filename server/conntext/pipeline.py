@@ -230,7 +230,10 @@ def heuristic_topic_summary(memos, procedure=False):
             lines.append(f"## {m.get('when_hint') or m['title']}{mark}\n{m['body'].strip()} [m:{m['id']}]\n")
             continue
         lines.append(f"- {m['body'].strip()}{mark} [m:{m['id']}]")
-    if old:
+    if old and procedure:
+        # 에이전트가 이 문서를 그대로 따르므로, 대체된 판의 단계와 명령은 싣지 않는다(리뷰 PR #22).
+        lines.append("대체된 이전 판: " + ", ".join(f"[m:{m['id']}]" for m in old) + " (옛 단계라 여기 싣지 않음)")
+    elif old:
         lines.append("\n## 이전 기록")
         for m in old:
             lines.append(f"- 이전에는: {m['body'].strip()} [m:{m['id']}]")

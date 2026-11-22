@@ -1090,6 +1090,15 @@ class TestProcedure(Base):
         self.assertEqual(self.memo(k["memo_id"])["status"], "superseded")
         self.assertEqual(self.topic(r["memo_id"])["kind"], "procedure")
 
+    def test_fallback_procedure_doc_omits_superseded_steps(self):
+        a = pipeline.remember(self.alice, "스테이징 배포 절차:\n1. `make build`\n2. `make deploy-old`", project_key=GW)
+        b = pipeline.remember(self.alice, "스테이징 배포 절차:\n1. `make build`\n2. `make deploy STAGE=stg`", project_key=GW, replaces_id=a["memo_id"])
+        jobs.drain()
+        doc = db.val("SELECT summary FROM topics WHERE id=?", self.topic(b["memo_id"])["id"])
+        self.assertIn("make deploy STAGE=stg", doc)
+        self.assertNotIn("deploy-old", doc)
+        self.assertIn(f"[m:{a['memo_id']}]", doc)   # 이력은 번호로만 남긴다
+
     def test_heuristic_boundaries(self):
         for text, kind in [("배포하려면 먼저 make build 하고 그 다음 make deploy를 실행한다", "procedure"),
                            ("인증서 갱신할 때는 `certbot renew` 후 nginx를 reload한다", "procedure"),
