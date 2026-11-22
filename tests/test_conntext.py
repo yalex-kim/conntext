@@ -1099,6 +1099,14 @@ class TestProcedure(Base):
             self.assertEqual(pipeline.heuristic_kind(text), kind, text)
         self.assertEqual(pipeline.heuristic_when("배포를 하려면 먼저 빌드한다"), "배포를 할 때")
         self.assertEqual(pipeline.heuristic_when("게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge"), "게이트웨이 재시작할 때")
+        # 단계부터 시작하면 첫 단계가 아니라 목표(마지막 단계)로 언제를 정한다(리뷰 PR #22)
+        steps = "1. `make build`\n2. `make deploy STAGE=stg`"
+        self.assertEqual(pipeline.heuristic_kind(steps), "procedure")
+        self.assertEqual(pipeline.heuristic_when(steps), "‘make deploy STAGE=stg’로 끝나는 작업을 할 때")
+        self.assertEqual(pipeline.heuristic_when("배포 순서\n1. make build\n2. make deploy"), "배포할 때")
+        p = pipeline.remember(self.alice, steps, project_key=GW)
+        self.assertNotIn("1.", self.topic(p["memo_id"])["title"])
+        self.assertNotIn("make build", self.memo(p["memo_id"])["when_hint"])
 
     def test_injection_has_procedure_index_before_knowledge(self):
         p = pipeline.remember(self.alice, self.STEPS, project_key=GW)

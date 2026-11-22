@@ -115,15 +115,35 @@ WHEN_MARK = re.compile(r"^(.{2,30}?)\s?(?:하려면|할\s?때는|할\s?때에는
 PROC_SUFFIX = re.compile(r"\s*(?:절차|순서|방법)$")
 
 
+LIST_ITEM = re.compile(r"^\s*(?:\d+[.)]|[①-⑨]|[-*•])\s*")
+
+
+def _clean_line(ln):
+    return re.sub(r"[`*_]", "", re.sub(r"\s+", " ", LIST_ITEM.sub("", ln))).strip()
+
+
+def procedure_lead(text):
+    """절차가 무슨 작업인지 드러내는 부분. 단계 목록이 아닌 첫 줄(머리말)을 쓰고,
+    단계만 있으면 마지막 단계를 쓴다. 단계는 대개 목표(배포, 반영)로 끝나기 때문이다.
+    돌려주는 값: (문구, 마지막 단계에서 왔는지)"""
+    lines = [ln for ln in text.strip().splitlines() if ln.strip()]
+    head = next((ln for ln in lines if not LIST_ITEM.match(ln)), None)
+    if head:
+        return _clean_line(head).rstrip(":：").strip(), False   # "스테이징 배포 절차:" 같은 머리말의 끝 쌍점
+    return _clean_line(lines[-1]) if lines else "", True
+
+
 def heuristic_when(text):
-    """절차를 언제 꺼내 쓰는지 한 줄. '배포하려면 …' → '배포할 때', '스테이징 배포 절차: …' → '스테이징 배포할 때'."""
-    first = next((ln for ln in text.strip().splitlines() if ln.strip()), "")
-    t = re.sub(r"[`*_]", "", re.sub(r"\s+", " ", first)).strip()
-    m = WHEN_MARK.match(t)
+    """절차를 언제 꺼내 쓰는지 한 줄. '배포하려면 …' → '배포할 때', '스테이징 배포 절차: …' → '스테이징 배포할 때',
+    단계만 있으면 '1. make build 2. make deploy' → '‘make deploy’로 끝나는 작업을 할 때'(리뷰 PR #22)."""
+    lead, from_steps = procedure_lead(text)
+    if from_steps:
+        return f"‘{lead[:24]}’로 끝나는 작업을 할 때"
+    m = WHEN_MARK.match(lead)
     if m:
         ph = m.group(1).strip()
         return (f"{ph} 할 때" if re.search(r"[을를]$", ph) else f"{ph}할 때")[:WHEN_MAX]
-    ph = topic_phrase(text)
+    ph = topic_phrase(lead)
     core = PROC_SUFFIX.sub("", ph).strip()
     if core and core != ph:
         return f"{core}할 때"[:WHEN_MAX]
@@ -184,7 +204,7 @@ def heuristic_analyze(text, candidates, topics, space_id, kind=None):
     if kind in TOPIC_KIND and res["relation"] in ("none", "related"):
         # 주제 문구가 기존 주제 제목과 충분히 가까우면 거기에 붙이고, 아니면 새 주제를 만든다.
         # 개체가 겹친다는 이유만으로는 합치지 않는다(BLE, OTA 같은 넓은 개체가 모든 메모를 한 문서로 끌어모은다).
-        phrase = topic_phrase(text)
+        phrase = topic_phrase(procedure_lead(text)[0] if kind == "procedure" else text)
         if kind == "procedure" and not PROC_SUFFIX.search(phrase):
             phrase = f"{phrase} 절차"
         pv, best, best_s = embed.embed(phrase), None, 0.0
