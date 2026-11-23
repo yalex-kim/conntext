@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS sessions(
   status TEXT NOT NULL DEFAULT 'open',          -- open | uploaded | extracted | excluded | failed
   transcript TEXT, transcript_chars INTEGER NOT NULL DEFAULT 0, masked_count INTEGER NOT NULL DEFAULT 0,
   summary TEXT, handoff TEXT, source_acl TEXT, pipeline_version TEXT,
+  extracted_tail TEXT,                          -- 추출을 마친 대화록의 끝 부분. 다음 추출은 이 뒤만 본다(#18)
+  checkpoints INTEGER NOT NULL DEFAULT 0,       -- 대화 중 체크포인트 추출 횟수
   UNIQUE(user_id, platform, ext_id));
 CREATE TABLE IF NOT EXISTS ingest_events(
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, space_id INTEGER NOT NULL, memo_id INTEGER,

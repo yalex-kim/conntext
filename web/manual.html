@@ -301,7 +301,7 @@
               <thead><tr><th scope="col">등급</th><th scope="col">생기는 경로</th><th scope="col">세션 시작 때</th><th scope="col"><code>/recall</code>에서</th><th scope="col">유지</th></tr></thead>
               <tbody>
                 <tr><td><span class="tag tag--mine">m:12</span>내 메모</td><td><code>/remember</code>, 웹 입력, 확인한 후보</td><td>지시·선호는 항상 넣고(최대 12건, 합쳐 1,200자. 넘으면 알리고, 들어가지 않는 지시는 빠짐), 절차는 절차 색인에 “언제 → 제목”만(최대 20개), 지식은 주제 색인에 제목만(예산 안에서 최대 40개 주제, 자주 쓰인 주제 먼저)</td><td>[내 메모]</td><td>지울 때까지</td></tr>
-                <tr><td><span class="tag tag--state">m:34</span>진행 상태</td><td><code>/handoff</code>, 세션 종료 때 자동</td><td>이 저장소의 최신 1건</td><td>[진행 상태]</td><td>저장소마다 최신 1건, 14일 뒤 만료</td></tr>
+                <tr><td><span class="tag tag--state">m:34</span>진행 상태</td><td><code>/handoff</code>, 대화 중 10턴마다와 세션 종료 때 자동</td><td>이 저장소의 최신 1건</td><td>[진행 상태]</td><td>저장소마다 최신 1건, 14일 뒤 만료</td></tr>
                 <tr><td><span class="tag tag--team">m:37</span>팀 지식</td><td>동료가 팀으로 공유</td><td>팀 규칙(지시) 최근 6건, 팀 절차 색인(최대 10개), 팀 지식 색인(최대 20개 주제)</td><td>[팀 지식 · 작성자]</td><td>팀 공간에 남음</td></tr>
                 <tr><td><span class="tag tag--candidate">m:49</span>후보</td><td>세션 자동 추출</td><td>넣지 않음</td><td>[세션 자동 추출·미확인], 순위를 낮춤</td><td>정식이 되거나 30일 뒤 만료(5.2)</td></tr>
                 <tr><td><span class="tag tag--superseded">m:4</span>대체됨</td><td>갱신 판정, 고치기</td><td>넣지 않음</td><td>나오지 않음</td><td>이력에 남음</td></tr>
@@ -367,6 +367,7 @@
         <h3 id="s5-1"><a class="subno" href="#s5-1">5.1</a>무엇이 서버로 가나</h3>
         <div class="prose">
           <p><b>Claude Code</b>는 세션이 끝날 때와 대화를 압축하기 직전에 훅이 대화록 파일(끝에서부터 최대 3MB)을 백그라운드로 보냅니다. 보내기 전에 장비에서 <code>&lt;private&gt;</code> 구간을 지웁니다. <b>OpenCode</b>는 응답이 끝날 때마다 발화와 도구 이름만 담은 스냅샷을 만들고, OpenCode가 끝나거나 300초 동안 대화가 없으면 보냅니다.</p>
+          <p>긴 세션은 끝나기 전에도 <b>응답 10번마다</b>(운영 정책으로 바꾸거나 끌 수 있음) 체크포인트로 올라갑니다. 서버는 그때마다 진행 상태를 갱신해, 같은 저장소의 다른 에이전트가 <code>/resume</code>으로 지금까지의 진행을 바로 이어받을 수 있습니다. 지식 후보는 직전 체크포인트 뒤에 새로 나온 부분에서만 뽑으므로 같은 후보가 되풀이되지 않습니다. 세션 화면에는 “대화 중 정리 N회”로 보입니다.</p>
           <p>서버는 받은 대화에서 아래 왼쪽 열만 남기고 마스킹한 뒤 저장합니다.</p>
           <div class="table-wrap">
             <table class="table">

@@ -101,7 +101,8 @@ export const Conntext = async ({ client, directory }) => {
           // 대기 프로세스를 스냅샷보다 먼저 띄운다. 스냅샷을 쓰는 사이 OpenCode가 끝나도 대기 프로세스는 남는다.
           // 이미 이 세션을 기다리는 프로세스가 있으면 새로 띄운 쪽은 바로 끝난다.
           detached(["upload", marker(id), "--after", String(IDLE_UPLOAD_SECONDS), "--pid", String(process.pid)])
-          await snapshot(id)
+          // 응답 한 번이 끝났다. N턴마다 체크포인트를 올린다(간격은 서버 정책, 세는 것은 클라이언트).
+          if (await snapshot(id)) run(["hook", "turn"], JSON.stringify({ session_id: id, cwd: directory }))
         } else if (event.type === "session.compacted") {
           if (await snapshot(id)) detached(["upload", marker(id), "--checkpoint"])
         } else if (event.type === "session.deleted") {

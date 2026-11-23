@@ -139,8 +139,44 @@ def upload(user, platform, ext_id, project_key=None, cwd=None, transcript=None, 
     db.trace("session_upload", f"{platform}:{'final' if final else 'checkpoint'}:{reason or ''}:chars={len(text)}:masked={masked}", session_id=sid)
     if final and len(text) >= 40:
         jobs.enqueue("session_extract", {"session_id": sid}, dedupe=True)
+    elif reason == "checkpoint" and checkpoint_turns() and len(text) >= 40:
+        # 대화 중 체크포인트(#18): 직전 추출 이후 부분만 보고 진행 상태와 새 후보를 뽑는다.
+        jobs.enqueue("session_checkpoint", {"session_id": sid}, dedupe=True)
     db.metric("hook", "session-upload", (time.time() - t0) * 1000, user_id=uid)
     return {"session_id": sid, "status": "uploaded" if final else "checkpoint", "masked": masked}
+
+
+def checkpoint_turns():
+    try:
+        return max(0, int(db.policy("capture").get("checkpoint_turns") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+ANCHOR_CHARS = 200     # 추출을 마친 지점을 다음 대화록에서 찾을 때 쓰는 끝부분 길이
+MIN_DELTA_CHARS = 40   # 새로 이어진 부분이 이보다 짧으면 체크포인트 추출을 건너뛴다
+
+
+def split_new(text, anchor):
+    """(이미 추출한 앞부분, 새로 이어진 부분). 앞서 추출한 끝부분을 찾지 못하면(대화록이 잘렸거나 바뀜) 전체를 새로 본다."""
+    if anchor:
+        i = text.rfind(anchor)
+        if i >= 0:
+            return text[:i + len(anchor)], text[i + len(anchor):]
+    return "", text
+
+
+HANDOFF_ITEMS = 8
+
+
+def merge_handoff(prev, new):
+    """규칙 경로의 체크포인트는 새 부분만 보므로, 이전 진행 상태와 합쳐 세션 전체를 남긴다(리뷰 PR #23).
+    남은 일은 이전 것 가운데 새로 끝낸 일과 같은 것만 빼고 이어 붙인다. 목록은 최근 것 위주로 줄인다."""
+    done = list(dict.fromkeys((prev.get("done") or []) + (new.get("done") or [])))
+    finished = set(new.get("done") or [])
+    remaining = list(dict.fromkeys([r for r in prev.get("remaining") or [] if r not in finished] + (new.get("remaining") or [])))
+    notes = " ".join(x for x in (prev.get("notes") or "", new.get("notes") or "") if x).strip()
+    return {"done": done[-HANDOFF_ITEMS:], "remaining": remaining[-HANDOFF_ITEMS:], "notes": notes[-600:]}
 
 
 def heuristic_extract(text):
@@ -196,42 +232,80 @@ def save_handoff(user, project_key, body, platform=None, session_id=None, source
     return res
 
 
-def extract(session_id):
+def extract(session_id, checkpoint=False):
+    """세션 대화록에서 진행 상태와 지식 후보를 뽑는다.
+
+    이미 추출한 부분(체크포인트, OpenCode의 거듭된 업로드)이 있으면 그 뒤만 본다. 진행 상태는 이전 상태를 받아
+    세션 전체 기준으로 다시 쓰고, 후보는 새 부분에서만 뽑아 같은 후보가 되풀이되지 않게 한다(#18)."""
     s = db.one("SELECT * FROM sessions WHERE id=?", session_id)
     if not s or not s["transcript"]:
         return None
     user = db.one("SELECT * FROM users WHERE id=?", s["user_id"])
     t0 = time.time()
+    text = s["transcript"]
+    earlier, delta = split_new(text, s["extracted_tail"])
+    stage = "session_checkpoint" if checkpoint else "session_extract"
+    if len(delta.strip()) < (MIN_DELTA_CHARS if earlier else 1):
+        if not checkpoint:
+            db.update("sessions", session_id, status="extracted", pipeline_version=config.PIPELINE_VERSION)
+        db.trace(stage, "skip:no-new-lines", session_id=session_id)
+        return {"session_id": session_id, "candidates": [], "by": "skip"}
+    prev_h = db.js(s["handoff"], None) or {}
     out = None
     if llm.provider() != "heuristic":
-        prompt = f"플랫폼: {s['platform']}\n저장소: {s['project_key'] or '없음'}\n\n세션 기록:\n{_clip(s['transcript'], 60000)}"
-        out = llm.complete_json("session_extract", llm.SESSION_SYSTEM, prompt, llm.SESSION_SCHEMA, user["id"])
+        head = f"플랫폼: {s['platform']}\n저장소: {s['project_key'] or '없음'}\n\n"
+        if earlier:
+            seen = db.q("SELECT body FROM memos WHERE origin_session_id=? AND kind!='state' AND status NOT IN ('deleted','dismissed') ORDER BY id", session_id)
+            prompt = (head + "이 세션의 앞부분은 이미 처리했다.\n\n지금까지의 진행 상태:\n"
+                      + (format_handoff(prev_h, s["summary"]) or "(없음)")
+                      + "\n\n앞부분에서 이미 뽑은 후보:\n" + ("\n".join(f"- {m['body'][:300]}" for m in seen) or "(없음)")
+                      + "\n\n아래는 그 뒤로 이어진 기록이다. summary와 handoff는 앞부분까지 포함한 세션 전체 기준으로 다시 쓴다. "
+                        "candidates는 아래 새 기록에서 새로 드러난 것만 뽑고, 이미 뽑은 후보와 같은 내용은 다시 뽑지 않는다.\n\n"
+                      + f"새 기록:\n{_clip(delta, 60000)}")
+        else:
+            prompt = head + f"세션 기록:\n{_clip(text, 60000)}"
+        out = llm.complete_json(stage, llm.SESSION_SYSTEM, prompt, llm.SESSION_SCHEMA, user["id"])
     by = "llm" if out else "rule"
     if not out:
-        out = heuristic_extract(s["transcript"])
+        out = heuristic_extract(delta)
+        if earlier and s["summary"]:
+            out["summary"] = s["summary"]      # 규칙 경로는 새 부분만 보므로, 세션 요약은 처음 것을 둔다.
+        if earlier and prev_h:
+            out["handoff"] = merge_handoff(prev_h, out.get("handoff") or {})
     h = out.get("handoff") or {}
-    handoff_text = format_handoff(h, out.get("summary"))
+    has_h = bool(h.get("remaining") or h.get("done") or h.get("notes"))
     created = []
-    if h.get("remaining") or h.get("done") or h.get("notes"):
-        save_handoff(user, s["project_key"], handoff_text, s["platform"], session_id, source="session")
+    if has_h:
+        save_handoff(user, s["project_key"], format_handoff(h, out.get("summary")), s["platform"], session_id, source="session")
     for c in (out.get("candidates") or [])[:5]:
-        text = (c.get("text") or "").strip()
-        if len(text) < 10:
+        text_c = (c.get("text") or "").strip()
+        if len(text_c) < 10:
             continue
         # knowledge는 분석에 맡긴다(같은 사안의 기존 메모를 따라가도록). instruction·procedure는 추출 판정을 그대로 쓴다.
         kind = c.get("kind") if c.get("kind") in ("instruction", "procedure") else None
-        r = pipeline.remember(user, text, project_key=s["project_key"], kind=kind, when=c.get("when") if kind == "procedure" else None,
+        r = pipeline.remember(user, text_c, project_key=s["project_key"], kind=kind, when=c.get("when") if kind == "procedure" else None,
                               source="session", trust="low", origin_session_id=session_id, source_acl=s["source_acl"])
         if r["status"] == "active":
             created.append(r["memo_id"])
-    db.update("sessions", session_id, status="extracted", summary=out.get("summary"), handoff=h, pipeline_version=config.PIPELINE_VERSION)
-    db.trace("session_extract", f"{by}:candidates={len(created)}", session_id=session_id, ms=(time.time() - t0) * 1000)
+    fields = dict(summary=out.get("summary") or s["summary"], handoff=h if has_h else (prev_h or h),
+                  extracted_tail=text[-ANCHOR_CHARS:], pipeline_version=config.PIPELINE_VERSION)
+    if checkpoint:
+        fields["checkpoints"] = (s["checkpoints"] or 0) + 1
+    else:
+        fields["status"] = "extracted"
+    db.update("sessions", session_id, **fields)
+    db.trace(stage, f"{by}:{'delta' if earlier else 'full'}:candidates={len(created)}", session_id=session_id, ms=(time.time() - t0) * 1000)
     return {"session_id": session_id, "candidates": created, "by": by}
 
 
 @jobs.handler("session_extract")
 def _job_extract(p):
     extract(p["session_id"])
+
+
+@jobs.handler("session_checkpoint")
+def _job_checkpoint(p):
+    extract(p["session_id"], checkpoint=True)
 
 
 @jobs.handler("topic_summary")

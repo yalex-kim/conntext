@@ -95,14 +95,14 @@ async function sessionsScreen(root, ctx) {
     render(det, html`${back()}<article class="sdet">
       <header class="sdet__head"><h2 class="sdet__title">${s.summary || `${platformName(s.platform)} 세션`}</h2>
         <p class="doc__meta"><span class="chip">${SESSION_STATUS[s.status] || s.status}</span><span>${platformName(s.platform)}</span>${projectChip(s.project)}
-          <span>${fmtDateTime(s.started_at)}${s.ended_at ? ` ~ ${fmtDateTime(s.ended_at).slice(11)}` : ''}</span></p></header>
+          <span>${fmtDateTime(s.started_at)}${s.ended_at ? ` ~ ${fmtDateTime(s.ended_at).slice(11)}` : ''}</span>${s.checkpoints ? html`<span>대화 중 정리 <span class="num">${s.checkpoints}</span>회</span>` : ''}</p></header>
       ${inj ? html`<p class="sdet__inj">${icon('agent', 'icon--sm')}<span>시작할 때 <span class="num">${fmtNum(inj.tokens)}</span> 토큰을 넣었습니다${Array.isArray(inj.memo_ids) ? html` (메모 <span class="num">${inj.memo_ids.length}</span>건, 주제 <span class="num">${inj.topic_ids.length}</span>개)` : ''}.</span></p>` : ''}
       <section class="memo__sec"><h3 class="memo__h">진행 상태</h3>
         ${h.done?.length || h.remaining?.length || h.notes ? html`<dl class="handoff">
           ${h.done?.length ? html`<dt>끝낸 일</dt><dd><ul>${h.done.map((x) => html`<li>${x}</li>`)}</ul></dd>` : ''}
           ${h.remaining?.length ? html`<dt>남은 일</dt><dd><ul>${h.remaining.map((x) => html`<li>${x}</li>`)}</ul></dd>` : ''}
           ${h.notes ? html`<dt>메모</dt><dd class="pre">${h.notes}</dd>` : ''}</dl>`
-        : html`<p class="quiet-line">${s.status === 'open' ? '세션이 끝나면 정리됩니다.' : '남긴 진행 상태가 없습니다.'}</p>`}
+        : html`<p class="quiet-line">${s.status === 'open' ? '대화 중 일정한 턴마다, 그리고 세션이 끝나면 정리됩니다.' : '남긴 진행 상태가 없습니다.'}</p>`}
         ${states.length ? html`<p class="sdet__tags">진행 상태 메모: ${states.map((m) => html`${memoTag(m, { href: `#/memos/${m.id}` })} `)}</p>` : ''}
       </section>
       <section class="memo__sec"><h3 class="memo__h">추출된 메모 <span class="num muted">${extracted.length}</span></h3>
