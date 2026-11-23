@@ -6,6 +6,7 @@
     "studio": "remotion studio",
     "check": "tsc --noEmit",
     "render": "remotion render Promo out/promo-voice.mp4",
+    "render:silent": "remotion render PromoSilent out/promo-silent.mp4",
     "loudnorm": "ffmpeg -y -i out/promo-voice.mp4 -c:v copy -af loudnorm=I=-16:TP=-1.5:LRA=11 -c:a aac -b:a 192k out/conntext-promo.mp4",
     "web": "ffmpeg -y -i out/conntext-promo.mp4 -c:v libx264 -preset slow -crf 26 -tune animation -pix_fmt yuv420p -c:a aac -b:a 96k -movflags +faststart ../web/assets/video/conntext-promo.mp4",
     "poster": "remotion still Poster out/poster.png && ffmpeg -y -i out/poster.png -vf scale=1280:-2 -q:v 4 ../web/assets/video/conntext-promo-poster.jpg",

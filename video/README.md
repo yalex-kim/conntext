@@ -13,7 +13,8 @@ export REMOTION_BROWSER=/root/.cache/ms-playwright/chromium_headless_shell-1248/
 npm install
 npm run check      # 타입 검사
 npm run studio     # 미리 보기
-npm run render     # out/promo-voice.mp4 (public/audio/의 음성이 있으면 나레이션판, 없으면 무음판)
+npm run render     # 나레이션판 out/promo-voice.mp4. public/audio/의 음성이 있어야 한다(아래 '나레이션'으로 먼저 만든다)
+npm run render:silent  # 무음판 out/promo-silent.mp4. 음성 없이 같은 장면 길이(새로 받은 저장소에서도 된다)
 npm run loudnorm   # 음량 −16 LUFS → out/conntext-promo.mp4
 npm run web        # 웹용 재압축(1080p, CRF 26, faststart) → ../web/assets/video/conntext-promo.mp4
 npm run poster     # 포스터(자막 없음, 아래 1/3은 재생 단추 자리) → ../web/assets/video/conntext-promo-poster.jpg
