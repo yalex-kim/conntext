@@ -28,6 +28,10 @@ async function agentScreen(root, ctx) {
       <a href="#/agent?project=" data-p="">저장소 밖</a>
     </nav>
     <div id="ag-preview"></div>
+    <section class="sec" aria-labelledby="h-pr">
+      <div class="sec__head"><h2 class="sec__title" id="h-pr">질문마다 넣는 메모</h2><span class="sec__meta">질문을 보낼 때마다 그 질문과 관련도가 충분한 메모만 2~3개 더 넣습니다. 없으면 아무것도 넣지 않습니다.</span></div>
+      <div id="ag-pr"></div>
+    </section>
     <section class="sec" aria-labelledby="h-inj">
       <div class="sec__head"><h2 class="sec__title" id="h-inj">최근 주입 기록</h2><span class="sec__meta">세션을 시작할 때 실제로 넣은 기록입니다. 쓰인 메모는 에이전트가 답에 썼다고 알린 수입니다.</span></div>
       <div id="ag-inj">${loading()}</div>
@@ -150,7 +154,61 @@ async function agentScreen(root, ctx) {
     }
   }
 
+  function paintPrompt() {
+    // 정책이 꺼져 있으면 사용자 스위치는 의미가 없다. 사실만 알린다.
+    const host = root.querySelector('#ag-pr');
+    const policyOn = state.me.prompt_recall_enabled !== false;
+    const on = policyOn && !state.me.user.prompt_recall_off;
+    render(host, html`
+      ${policyOn ? html`<div class="capture-ctl"><label class="switch"><input type="checkbox" role="switch" id="pr-switch" ${on ? 'checked' : ''}> <strong>질문마다 관련 메모 넣기 ${on ? '켜짐' : '꺼짐'}</strong></label>
+        <p class="capture-ctl__text">${on ? '질문의 내용어가 메모에 둘 이상 있고 관련도가 기준을 넘는 메모만 넣습니다. 같은 세션에서 이미 넣은 메모는 다시 넣지 않습니다. 질문 원문은 검색에만 쓰고 저장하지 않습니다.'
+          : '세션 시작 때의 주입과 /recall은 그대로 됩니다. 질문마다 따로 넣는 것만 꺼집니다.'}</p></div>`
+        : html`<p class="quiet-line">운영 정책에서 꺼져 있습니다.</p>`}
+      <form class="pr-try" id="pr-form">
+        <label class="pr-try__label" for="pr-input">질문을 넣어 보면 어떤 메모가 들어갈지 미리 봅니다(기록은 남지 않습니다)</label>
+        <div class="pr-try__row"><input class="input" id="pr-input" placeholder="예: 본딩 정보 어디 저장돼?" maxlength="400" autocomplete="off">
+          <button type="submit" class="btn">미리 보기</button></div>
+      </form>
+      <div id="pr-out" aria-live="polite"></div>`);
+    const sw = host.querySelector('#pr-switch');
+    if (sw) sw.onchange = async (e) => {
+      const off = !e.target.checked;
+      sw.disabled = true;
+      try {
+        await api('/api/me', { method: 'PUT', body: { prompt_recall_off: off } });
+        state.me.user.prompt_recall_off = off ? 1 : 0;
+        toast(off ? '질문마다 관련 메모 넣기를 껐습니다.' : '질문마다 관련 메모 넣기를 켰습니다.');
+        paintPrompt();
+      } catch (err) {
+        e.target.checked = !off;
+        sw.disabled = false;
+        toast(err.message, { tone: 'error' });
+      }
+    };
+    host.querySelector('#pr-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const prompt = host.querySelector('#pr-input').value.trim();
+      const out = host.querySelector('#pr-out');
+      if (!prompt) return;
+      render(out, loading('찾는 중입니다'));
+      try {
+        const pk = new URLSearchParams(location.hash.split('?')[1] || '').get('project') || '';
+        const r = await api('/api/agent/prompt-preview', { method: 'POST', body: { prompt, project: pk } });
+        render(out, !r.enabled ? html`<p class="quiet-line">지금은 꺼져 있어 넣지 않습니다.</p>`
+          : r.items.length ? html`<ul class="aitems pr-items">${r.items.map((it) => html`<li>
+              <span class="aitems__ref">${memoTag({ id: it.memo_id, tier: it.tier }, { href: `#/memos/${it.memo_id}`, by: false })}</span>
+              <span class="aitems__text">${it.text}</span>
+              <span class="aitems__tok num" title="관련도">${it.relevance.toFixed(2)}</span></li>`)}</ul>
+              <p class="quiet-line">합계 <span class="num">${fmtNum(r.tokens)}</span> 토큰 · 오른쪽 숫자는 관련도(기준 ${r.policy.min_score})</p>`
+          : html`<p class="quiet-line">이 질문에는 넣을 만큼 관련 있는 메모가 없어 아무것도 넣지 않습니다.</p>`);
+      } catch (err) {
+        render(out, errorState(err));
+      }
+    };
+  }
+
   await show(ctx);
+  paintPrompt();
   loadInjections();
   return { update: (c) => show(c), destroy: () => ro?.disconnect() };
 }

@@ -605,3 +605,10 @@ button.cite:hover { filter: brightness(0.95); }
 .whenform__hint { flex-basis: 100%; margin: 0; font-size: var(--fs-1); color: var(--ink-2); }
 .when { font-weight: 600; }
 .chip--proc { border-style: solid; border-color: var(--ink); font-weight: 600; }
+
+/* 질문마다 넣는 메모(#12) */
+.pr-try { margin-top: var(--s-4); }
+.pr-try__label { display: block; font-size: var(--fs-2); color: var(--ink-2); margin-bottom: 6px; }
+.pr-try__row { display: flex; gap: 8px; max-width: 720px; }
+.pr-try__row .input { flex: 1; min-width: 0; }
+.pr-items { margin-top: var(--s-3); }

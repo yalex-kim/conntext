@@ -259,6 +259,10 @@ async function overview(body, sig) {
         ${qrow({ name: '직접 적은 메모의 수정(대체)', desc: '새 메모가 옛 메모를 대체한 비율입니다. 높으면 같은 내용을 고쳐 적는 일이 잦아 처음 저장이 불완전하다는 뜻입니다.', part: q.manual_superseded_7d, whole: q.manual_7d, partLabel: '대체', wholeLabel: '직접 적음' })}
         ${qrow({ name: '검색 결과 없음', desc: '높으면 사람들이 찾는 말과 메모·주제 문서의 말이 어긋납니다. 색인과 주제 이름을 볼 때입니다.', part: q.zero_result_7d, whole: q.searches_7d, partLabel: '결과 없음', wholeLabel: '검색', warnAt: 0.2 })}
         ${qrow({ name: '주입했지만 쓰이지 않은 메모', desc: '세션 시작 때 넣었는데 에이전트가 답에 썼다고 알리지 않은 메모입니다. 높으면 주입 내용이 일과 맞지 않아 토큰만 씁니다. 에이전트가 쓰임을 알리지 않는 플랫폼에서는 실제보다 높게 나옵니다.', part: q.injected_memos_7d - q.injected_used_7d, whole: q.injected_memos_7d, partLabel: '안 쓰임', wholeLabel: '주입한 메모', unit: '개', warnAt: 0.8 })}
+        ${qrow({ name: '질문마다 넣었지만 쓰이지 않은 메모', desc: '질문 단위로 넣은 메모 가운데 같은 세션에서 답에 썼다고 알리지 않은 것입니다. 높으면 관련도 기준을 올리세요(정책 탭).', part: q.prompt_memos_7d - q.prompt_used_7d, whole: q.prompt_memos_7d, partLabel: '안 쓰임', wholeLabel: '넣은 메모', unit: '개', warnAt: 0.8 })}
+        <li class="q__row"><div class="q__what"><p class="q__name">질문 단위 주입량</p><p class="q__desc">질문을 받은 횟수 가운데 메모를 넣은 비율과, 넣었을 때의 평균 토큰입니다. 비율이 너무 높으면 기준이 낮다는 뜻입니다.</p></div>
+          <p class="q__val">넣음 ${n(q.prompt_hit_7d)}회 / 질문 ${n(q.prompt_calls_7d)}회 · 평균 ${n(q.prompt_avg_tokens)}토큰</p>
+          <div>${q.prompt_calls_7d ? html`<span class="q__pct">${pct(q.prompt_hit_7d, q.prompt_calls_7d)}%</span><span class="q__meter" aria-hidden="true"><i style="width:${w(q.prompt_hit_7d, q.prompt_calls_7d)}"></i></span>` : html`<span class="q__thin">표본 없음</span>`}</div></li>
         ${qrow({ name: '검색으로 찾은 메모의 쓰임', desc: '검색에 걸린 메모 가운데 답에 쓰인 것입니다. 낮으면 검색 순위가 엉뚱한 메모를 올리고 있다는 뜻입니다.', part: q.used_memos_7d, whole: q.recalled_memos_7d, partLabel: '쓰임', wholeLabel: '검색에 걸린 메모', unit: '개', warnAt: 2 })}
         <li class="q__row"><div class="q__what"><p class="q__name">분석 방식: 규칙 대 LLM</p><p class="q__desc">LLM이 꺼져 있거나 실패·예산 초과면 규칙 비율이 올라갑니다. 규칙 판단은 대체·중복을 덜 잡습니다.</p></div>
           <p class="q__val">규칙 ${n(q.analyze_by_rule_7d)}건 / LLM ${n(q.analyze_by_llm_7d)}건</p>
@@ -635,6 +639,12 @@ const PFORMS = [
     { k: 'max_procedures', label: '절차 색인 최대 수', unit: '개', min: 0, hint: '세션 시작 때 “언제 쓰는지 → 절차 제목” 줄을 몇 개까지 넣을지 정합니다. 절차 색인은 지식 색인보다 먼저 예산을 씁니다. 팀 절차는 이 값의 절반(최소 3)까지 넣습니다. 0이면 넣지 않습니다.' },
     { k: 'max_topics', label: '주제 색인 최대 수', unit: '개', min: 0, hint: '색인에 넣을 내 주제 수의 상한입니다. 색인은 제목만 넣으므로 보통은 토큰 예산이 먼저 개수를 정합니다. 팀 주제는 이 값의 절반(최소 3)까지 넣습니다.' },
   ] },
+  { key: 'prompt_recall', title: '질문마다 넣는 메모', meta: '질문을 보낼 때마다 관련 메모를 더 넣습니다. 사용자는 에이전트 화면에서 끌 수 있습니다.', fields: [
+    { k: 'enabled', label: '켜기', type: 'bool', hint: '끄면 모든 사용자의 질문 단위 주입이 멈춥니다. 세션 시작 주입과 /recall은 그대로입니다.' },
+    { k: 'max_memos', label: '질문당 최대 메모', unit: '개', min: 0, hint: '관련도가 높은 순으로 이만큼까지 넣습니다.' },
+    { k: 'token_budget', label: '질문당 토큰 예산', unit: '토큰', min: 0, step: 50, hint: '넘는 메모는 넣지 않습니다. 메모 본문은 400자에서 자릅니다.' },
+    { k: 'min_score', label: '관련도 기준', unit: '0~1', min: 0, max: 1, step: 0.05, decimal: true, hint: '관련도 = 0.6 × 질문 내용어 중 메모에 있는 비율 + 0.4 × 검색 점수. 질문의 내용어가 메모에 둘 이상 있어야 한다는 조건은 이와 별개로 늘 적용됩니다. 높이면 덜 넣고, 낮추면 엉뚱한 메모가 낄 수 있습니다. 운영 화면의 “질문마다 넣었지만 쓰이지 않은 메모”를 보며 조정하세요.' },
+  ] },
   { key: 'budget', title: 'LLM 예산', meta: '분석·추출·주제 문서 생성에 쓰는 LLM 토큰입니다.', fields: [
     { k: 'daily_tokens_per_user', label: '사용자당 하루 토큰', unit: '토큰', min: 0, step: 1000, hint: '사용자 한 명이 최근 24시간 동안 쓸 수 있는 LLM 토큰입니다. 사용자별 한도가 있으면 그것이 먼저입니다. 0이면 제한하지 않습니다.' },
   ], static: () => html`<p class="pol-static">넘었을 때: 최근 24시간 사용량이 예산을 넘은 사용자는, 다시 예산 아래로 내려갈 때까지 규칙 기반으로 처리합니다. 이 동작은 바꿀 수 없습니다.</p>` },
@@ -800,6 +810,7 @@ async function policies(body, sig) {
         if (f.type === 'platforms') v[f.k] = PLATFORMS.filter((p) => form.querySelector(`[name="${f.k}"][value="${p}"]`).checked);
         else if (f.type === 'lines') v[f.k] = form.elements[f.k].value.split('\n').map((x) => x.trim()).filter(Boolean);
         else if (f.type === 'version') v[f.k] = form.elements[f.k].value.trim();
+        else if (f.type === 'bool') v[f.k] = form.elements[f.k].checked;
         else v[f.k] = form.elements[f.k].value === '' ? NaN : Number(form.elements[f.k].value);
       }
       return v;
@@ -822,10 +833,11 @@ async function policies(body, sig) {
       const err = form.querySelector('.pol-err');
       form.querySelectorAll('[aria-invalid]').forEach((x) => x.removeAttribute('aria-invalid'));
       const v = read();
-      const bad = def.fields.filter((f) => (f.type ? (f.type === 'version' ? !/^\d+(\.\d+){0,2}$/.test(v[f.k]) : f.type === 'platforms' ? !v[f.k].length : false) : !Number.isInteger(v[f.k]) || v[f.k] < (f.min ?? 0)));
+      const bad = def.fields.filter((f) => (f.type ? (f.type === 'version' ? !/^\d+(\.\d+){0,2}$/.test(v[f.k]) : f.type === 'platforms' ? !v[f.k].length : false)
+        : !(f.decimal ? Number.isFinite(v[f.k]) && v[f.k] <= (f.max ?? Infinity) : Number.isInteger(v[f.k])) || v[f.k] < (f.min ?? 0)));
       if (bad.length) {
         bad.forEach((f) => form.querySelector(`[name="${f.k}"]`)?.setAttribute('aria-invalid', 'true'));
-        fieldError(err, bad.map((f) => (f.type === 'version' ? `${f.label}은 0.1.0 꼴로 적으세요.` : f.type === 'platforms' ? '허용 플랫폼을 하나 이상 고르세요.' : `${f.label}은 ${f.min ?? 0} 이상의 정수여야 합니다.`)).join(' '));
+        fieldError(err, bad.map((f) => (f.type === 'version' ? `${f.label}은 0.1.0 꼴로 적으세요.` : f.type === 'platforms' ? '허용 플랫폼을 하나 이상 고르세요.' : f.decimal ? `${f.label}은 ${f.min ?? 0}에서 ${f.max ?? ''} 사이의 수여야 합니다.` : `${f.label}은 ${f.min ?? 0} 이상의 정수여야 합니다.`)).join(' '));
         form.querySelector('[aria-invalid="true"]')?.focus();
         return;
       }
@@ -874,7 +886,8 @@ function pform(def, v, ro) {
         }
         if (f.type === 'lines') ctl = html`<textarea class="textarea input--mono" id="${fid}" name="${f.k}" rows="3" ${ro ? 'readonly' : ''} placeholder="예: github.com/connectivity/secret-infra">${(v[f.k] || []).join('\n')}</textarea>`;
         else if (f.type === 'version') ctl = html`<input class="input input--mono" id="${fid}" name="${f.k}" value="${v[f.k] ?? ''}" ${ro ? 'readonly' : ''} style="max-width:180px" spellcheck="false">`;
-        else ctl = html`<span style="display:flex;gap:8px;align-items:center"><input class="input" type="number" inputmode="numeric" id="${fid}" name="${f.k}" value="${v[f.k]}" min="${f.min ?? 0}" step="${f.step || 1}" ${ro ? 'readonly' : ''}><span class="muted small">${f.unit}</span></span>`;
+        else if (f.type === 'bool') ctl = html`<label class="switch"><input type="checkbox" role="switch" id="${fid}" name="${f.k}" ${v[f.k] ? 'checked' : ''} ${ro ? 'disabled' : ''}></label>`;
+        else ctl = html`<span style="display:flex;gap:8px;align-items:center"><input class="input" type="number" inputmode="${f.decimal ? 'decimal' : 'numeric'}" id="${fid}" name="${f.k}" value="${v[f.k]}" min="${f.min ?? 0}" step="${f.step || 1}" ${ro ? 'readonly' : ''}><span class="muted small">${f.unit}</span></span>`;
         return html`<div class="field"><label class="field__label" for="${fid}">${f.label}</label>${ctl}<p class="field__hint">${f.hint}</p></div>`;
       })}</div>
       ${def.static ? def.static(v) : ''}

@@ -73,7 +73,7 @@ python3 /path/to/conntext/plugin/scripts/conntext.py status
 
 플러그인이 하는 일:
 
-- 훅: `SessionStart`에서 맥락(지시·선호, 팀 규칙, 이 저장소의 진행 상태, 절차 색인, 주제 색인)을 넣고, `PreCompact`와 `SessionEnd`에서 대화록을 백그라운드로 올립니다. `Stop`(응답 한 번이 끝날 때)에서는 턴을 세어, 정책의 `checkpoint_turns`(기본 10)마다 대화 중 체크포인트를 올립니다. 훅은 에이전트를 기다리게 하지 않고, 실패하면 조용히 끝나며 `~/.conntext/client.log`에 남깁니다.
+- 훅: `SessionStart`에서 맥락(지시·선호, 팀 규칙, 이 저장소의 진행 상태, 절차 색인, 주제 색인)을 넣고, `PreCompact`와 `SessionEnd`에서 대화록을 백그라운드로 올립니다. `UserPromptSubmit`(질문을 보낼 때)에서는 그 질문과 관련도가 충분한 메모만 최대 3개를 질문 맥락에 넣습니다(없으면 아무것도 넣지 않음, 2.5초 안에 답이 없으면 건너뜀). `Stop`(응답 한 번이 끝날 때)에서는 턴을 세어, 정책의 `checkpoint_turns`(기본 10)마다 대화 중 체크포인트를 올립니다. 훅은 에이전트를 기다리게 하지 않고, 실패하면 조용히 끝나며 `~/.conntext/client.log`에 남깁니다.
 - MCP: `conntext.py mcp`가 표준 입출력 MCP를 서버의 `/mcp`로 중계하고, 도구 호출에 현재 저장소(`git remote origin`)를 `project`로 채워 넣습니다.
 - 명령어 다섯 개:
 
@@ -93,7 +93,7 @@ python3 /path/to/conntext/plugin/scripts/conntext.py install opencode
 
 `~/.conntext/bin/conntext.py`에 클라이언트를 복사하고, OpenCode 설정 폴더(`OPENCODE_CONFIG_DIR`, 없으면 `~/.config/opencode`)에 플러그인(`plugins/conntext.js`), 명령어 다섯 개(`commands/*.md`, 이름은 `/remember`, `/recall`, `/resume`, `/handoff`, `/forget`), `opencode.json`의 `mcp.conntext` 항목을 넣습니다. 기존 `opencode.json`은 `opencode.json.conntext-backup`으로 남깁니다. OpenCode를 다시 시작하면 적용됩니다.
 
-OpenCode에는 세션 종료 이벤트가 없습니다. 플러그인은 응답이 끝날 때(`session.idle`)마다 대화 스냅샷을 `~/.conntext/pending/`에 쓰고, OpenCode와 분리된 대기 프로세스를 띄웁니다. 대기 프로세스는 OpenCode가 끝나면 곧바로, OpenCode가 켜져 있으면 마지막 응답 뒤 300초(`CONNTEXT_IDLE_UPLOAD_SECONDS`) 동안 대화가 없을 때 올립니다. 세션마다 대기 프로세스는 하나만 남습니다.
+OpenCode에는 세션 종료 이벤트가 없습니다. 플러그인은 응답이 끝날 때(`session.idle`)마다 대화 스냅샷을 `~/.conntext/pending/`에 쓰고, OpenCode와 분리된 대기 프로세스를 띄웁니다. 대기 프로세스는 OpenCode가 끝나면 곧바로, OpenCode가 켜져 있으면 마지막 응답 뒤 300초(`CONNTEXT_IDLE_UPLOAD_SECONDS`) 동안 대화가 없을 때 올립니다. 세션마다 대기 프로세스는 하나만 남습니다. 질문마다 넣는 메모는 `chat.message`에서 질문을 받아 서버에 묻고, 그 질문의 모델 호출들(`experimental.chat.system.transform`)에 결과를 덧붙입니다. `chat.message`가 질문 내용을 주지 않는 OpenCode 판(1.4.3, parts가 빈 배열)에서는 세션의 마지막 사용자 메시지를 읽어 씁니다. OpenCode는 MCP 프로세스에 세션 id를 주지 않아, 플러그인이 지금 세션을 `~/.conntext/active/<OpenCode pid>.json`에 적고 MCP 프록시가 이를 읽어 `mark_used`를 세션에 잇습니다(MCP 호출 자체에는 세션 정보가 없어, 한 OpenCode 프로세스에서 두 세션이 동시에 돌면 마지막으로 질문한 세션으로 기록됩니다. 운영 지표의 쓰임 비율에만 영향). 이 경로는 가짜 OpenCode 클라이언트로만 시험했고 OpenCode를 실제로 띄워 보지는 못했습니다.
 
 ### 저장소 없이 받기
 
@@ -139,6 +139,7 @@ Claude Code 플러그인(훅과 명령어)은 마켓플레이스로 설치해야
 | `CONNTEXT_OFF` | `1`이면 훅이 아무것도 하지 않고, MCP 프록시가 저장소를 채우지 않습니다 |
 | `CONNTEXT_PLATFORM` | 서버에 알릴 플랫폼 이름(OpenCode 설치 시 `opencode`로 넣습니다) |
 | `CONNTEXT_IDLE_UPLOAD_SECONDS` | OpenCode를 켜 둔 채 쉴 때 업로드까지 기다리는 시간. 기본 300 |
+| `CONNTEXT_PROMPT_TIMEOUT` | 질문마다 관련 메모를 기다리는 최대 시간(초). 기본 2.5. 넘으면 아무것도 넣지 않고 질문을 그대로 보냅니다 |
 
 ### LLM 공급자
 
@@ -273,6 +274,7 @@ curl -s -X PUT  $S/api/admin/teams/<팀 id>/members -H "$H" -H 'Content-Type: ap
 | `capture` | `platforms`, `excluded_projects`(부분 문자열 일치), `max_transcript_chars` 400000, `checkpoint_turns` 10(0이면 대화 중 체크포인트를 끔. 클라이언트는 세션 시작 응답으로 이 값을 받는다) |
 | `retention` | 대화록 90일(에이전트의 `search_sessions` 검색 대상), 쓰이지 않은 후보 30일, 진행 상태 14일, 후보 자동 승격 사용 횟수 2 |
 | `injection` | 세션 시작 맥락 토큰 예산 1500, 지시 최대 12개·1,200자, 절차 색인 최대 20개, 주제 최대 40개(색인은 제목만 넣으므로 보통 예산이 먼저 개수를 정한다) |
+| `prompt_recall` | 질문마다 관련 메모: `enabled` 켬, `max_memos` 3, `token_budget` 400, `min_score` 0.35. 질문의 내용어가 메모에 둘 이상 있어야 하고(키워드 일치), 관련도 = 0.6×내용어 일치 비율 + 0.4×검색 점수가 기준 이상이어야 한다. 사용자는 웹 에이전트 화면에서 끈다(`users.prompt_recall_off`) |
 | `budget` | 사용자별 최근 24시간 LLM 토큰 400000. 넘으면 규칙 기반으로 처리 |
 | `clients` | 최소 플러그인 버전 |
 
@@ -328,7 +330,7 @@ python3 -m unittest discover -s tests          # 저장소 최상위에서
 
 - 인증: 개발용 로그인(이메일만 입력)뿐이고 사내 SSO 연동이 없습니다. `CONNTEXT_DEV_LOGIN=1`일 때 `/api/dev-users`는 인증 없이 사용자 목록을 돌려줍니다. 토큰에 만료가 없고 회수만 됩니다.
 - 전송: 서버는 HTTP만 받습니다. TLS는 앞단 프록시가 맡아야 합니다.
-- 검색: 기본 임베딩이 문자 n-gram 해싱이라 의미 검색이 아니라 표기가 겹치는 정도를 봅니다. 같은 뜻을 다른 말로 물으면 놓칩니다.
+- 검색: 기본 임베딩이 문자 n-gram 해싱이라 의미 검색이 아니라 표기가 겹치는 정도를 봅니다. 같은 뜻을 다른 말로 물으면 놓칩니다. 질문마다 넣는 메모(#12)는 이 때문에 내용어가 겹쳐야만 넣도록 보수적으로 잡았습니다. 사내 임베딩을 붙이면 `prompt_recall.min_score`를 다시 맞춰야 합니다.
 - 규모: 검색할 때마다 대상 공간의 메모 전체를 읽어 파이썬에서 유사도를 계산합니다. 메모가 수천 건을 넘으면 느려집니다.
 - 품질: LLM 없이(규칙 기반) 돌면 종류 분류, 관계 판정, 주제 제목, 세션 추출의 품질이 낮습니다. 데모 데이터도 규칙 기반으로 만들어졌습니다.
 - Anthropic API 경로는 키가 없어 실제 호출로 검증하지 못했습니다.

@@ -249,7 +249,8 @@ class TestCheckpoint(ClientBase):
         s = wait_until(lambda: (self.session("c1") or {}).get("transcript") and self.session("c1"))
         self.assertTrue(s, "체크포인트가 올라가지 않았습니다")
         self.assertEqual(s["status"], "open")                          # 세션은 아직 진행 중
-        jobs.drain()
+        # 업로드 요청은 대화록을 저장한 뒤 작업을 대기열에 넣는다. 그 사이에 비우면 놓치므로 결과가 나올 때까지 비운다.
+        self.assertTrue(wait_until(lambda: (jobs.drain(), self.session("c1")["checkpoints"] == 1)[1]))
         s = self.session("c1")
         self.assertEqual((s["checkpoints"], s["status"]), (1, "open"))
         state = db.one("SELECT body FROM memos WHERE kind='state' AND status='active' AND project_key=?", GW)
@@ -260,7 +261,7 @@ class TestCheckpoint(ClientBase):
         self.hook("turn", payload)
         self.hook("turn", payload)
         self.assertTrue(wait_until(lambda: "OTA 청크" in (self.session("c1")["transcript"] or "")))
-        jobs.drain()
+        self.assertTrue(wait_until(lambda: (jobs.drain(), self.session("c1")["checkpoints"] == 2)[1]))
         s = self.session("c1")
         self.assertEqual(s["checkpoints"], 2)
         bodies = [r["body"] for r in db.q("SELECT body FROM memos WHERE origin_session_id=? AND kind!='state'", s["id"])]
@@ -269,9 +270,7 @@ class TestCheckpoint(ClientBase):
         self.assertIn("실기기", db.one("SELECT body FROM memos WHERE kind='state' AND status='active' AND project_key=?", GW)["body"])
         # 세션이 끝나면 남은 부분만 보고 마무리한다
         self.hook("session-end", {**payload, "reason": "exit"})
-        self.assertTrue(wait_until(lambda: self.session("c1")["status"] == "uploaded"))
-        jobs.drain()
-        self.assertEqual(self.session("c1")["status"], "extracted")
+        self.assertTrue(wait_until(lambda: (jobs.drain(), self.session("c1")["status"] == "extracted")[1]))
         self.assertFalse((self.home / "pending" / "c1.json.turns").exists())
 
     def test_turn_hook_off_when_policy_zero_or_unknown(self):
@@ -285,6 +284,70 @@ class TestCheckpoint(ClientBase):
             self.hook("turn", payload)
         time.sleep(0.5)
         self.assertIsNone(self.session("c2")["transcript"])
+
+
+class TestPromptHook(ClientBase):
+    """UserPromptSubmit 훅(#12)."""
+    def setUp(self):
+        super().setUp()
+        self.setup_client()
+        pipeline.remember(self.user, "본딩 정보는 /data/bt/bond.db에 저장된다. 공장 초기화 때 지우지 않으면 재페어링이 실패한다", project_key=GW)
+
+    def test_prints_related_memo_as_additional_context(self):
+        r = self.hook("prompt", {"session_id": "q1", "cwd": str(self.repo), "prompt": "본딩 정보 어디 저장돼?"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["hookEventName"], "UserPromptSubmit")
+        self.assertIn("bond.db", out["additionalContext"])
+        # 관련 메모가 없거나 슬래시 명령이면 아무것도 출력하지 않는다
+        for p in ("테스트 돌려 줘", "/conntext:recall 본딩 정보"):
+            r = self.hook("prompt", {"session_id": "q1", "cwd": str(self.repo), "prompt": p})
+            self.assertEqual((r.returncode, r.stdout), (0, ""), p)
+
+    def test_server_down_is_quick_and_quiet(self):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            dead = f"http://127.0.0.1:{s.getsockname()[1]}"
+        t0 = time.time()
+        r = self.hook("prompt", {"session_id": "q2", "cwd": str(self.repo), "prompt": "본딩 정보 어디 저장돼?"}, env={"CONNTEXT_URL": dead})
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+        self.assertLess(time.time() - t0, 5)
+
+
+@unittest.skipUnless(__import__("shutil").which("node"), "node가 없으면 OpenCode 플러그인 시험을 건너뜁니다")
+class TestOpenCodePromptRecall(ClientBase):
+    """OpenCode 플러그인의 질문 단위 메모(#12). 일부 판은 chat.message에 빈 parts를 준다(리뷰 PR #24)."""
+    def test_parts_and_empty_parts_fallback(self):
+        self.setup_client()
+        pipeline.remember(self.user, "본딩 정보는 /data/bt/bond.db에 저장된다. 공장 초기화 때 지우지 않으면 재페어링이 실패한다", project_key=GW)
+        (self.home / "bin").mkdir(parents=True, exist_ok=True)
+        (self.home / "bin" / "conntext.py").write_text(CLIENT.read_text())
+        # 옛 node(18)는 package.json 없는 .js를 CommonJS로 읽는다. OpenCode가 하듯 ES 모듈로 읽히게 .mjs로 복사한다.
+        plugin = Path(self.tmp.name) / "conntext.mjs"
+        plugin.write_text((ROOT / "opencode" / "conntext.js").read_text())
+        script = Path(self.tmp.name) / "t.mjs"
+        script.write_text(f"""
+const {{ Conntext }} = await import({json.dumps(plugin.as_uri())});
+const fake = {{ session: {{ messages: async () => ({{ data: [
+  {{ info: {{ role: 'user' }}, parts: [{{ type: 'text', text: '예전 질문' }}] }},
+  {{ info: {{ role: 'user' }}, parts: [{{ type: 'text', text: '본딩 정보 어디 저장돼?' }}] }}] }}) }} }};
+const h = await Conntext({{ client: fake, directory: {json.dumps(str(self.repo))} }});
+const res = [];
+for (const [sid, parts] of [['a', [{{ type: 'text', text: '본딩 정보 어디 저장돼?' }}]], ['b', []]]) {{
+  await h['chat.message']({{ sessionID: sid }}, {{ message: {{}}, parts }});
+  const out = {{ system: [] }};
+  await h['experimental.chat.system.transform']({{ sessionID: sid }}, out);
+  res.push(out.system.some((x) => x.includes('bond.db')));
+}}
+console.log(JSON.stringify(res));
+""")
+        r = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60, env=self.env, cwd=str(self.repo))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout.strip().splitlines()[-1]), [True, True])
+        # 지금 세션을 적어 두어 MCP 프록시가 mark_used에 세션 id를 붙일 수 있게 한다
+        act = list((self.home / "active").glob("*.json"))
+        self.assertEqual(len(act), 1)
+        self.assertEqual(json.loads(act[0].read_text())["session_id"], "b")
 
 
 class TestOptOut(ClientBase):
@@ -376,6 +439,16 @@ class TestMcpProxy(ClientBase):
         self.assertEqual(rows["재시작 순서는 mqtt-broker 먼저, 그다음 ble-bridge"], GW)
         # 에이전트가 넣은 project는 덮어쓰지 않는다.
         self.assertEqual(rows["OTA 서버 포트는 8443"], "github.com/connectivity/ota-service")
+
+    def test_uses_opencode_active_session_for_mark_used(self):
+        # OpenCode는 MCP 프로세스에 세션 id를 주지 않는다. 부모(OpenCode, 여기서는 시험 프로세스) pid로 적힌 지금 세션을 쓴다.
+        self.setup_client()
+        mid = pipeline.remember(self.user, "본딩 정보는 /data/bt/bond.db에 저장된다", project_key=GW)["memo_id"]
+        (self.home / "active").mkdir(parents=True, exist_ok=True)
+        (self.home / "active" / f"{os.getpid()}.json").write_text(json.dumps({"session_id": "oc-1"}))
+        out = self.mcp([{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "mark_used", "arguments": {"memo_ids": [mid]}}}])
+        self.assertFalse(out[0]["result"]["isError"], out[0])
+        self.assertEqual(db.val("SELECT session_ext_id FROM memo_uses WHERE kind='used'"), "oc-1")
 
     def test_reports_errors_as_jsonrpc(self):
         out = self.mcp([{"jsonrpc": "2.0", "id": 7, "method": "tools/list"}], env={"CONNTEXT_URL": self.url, "CONNTEXT_TOKEN": "ctx_bad"})

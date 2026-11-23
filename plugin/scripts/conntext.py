@@ -9,6 +9,7 @@
   conntext.py mcp                             stdio MCP 프록시 (서버 /mcp로 중계)
   conntext.py upload <marker.json>            세션 대화록 업로드 (훅이 백그라운드로 실행)
   conntext.py hook turn                       응답 한 번이 끝날 때(Stop). N턴마다 체크포인트를 올린다
+  conntext.py hook prompt                     질문을 보낼 때(UserPromptSubmit). 관련 메모가 있으면 맥락에 넣는다
   conntext.py upload <marker.json> --checkpoint [--reason R]
                                               비최종 업로드(맥락 압축 직전, 대화 중 체크포인트)
   conntext.py upload <marker.json> --after N [--pid P]
@@ -23,12 +24,14 @@ from pathlib import Path
 VERSION = "0.2.0"
 HOME = Path(os.environ.get("CONNTEXT_HOME", Path.home() / ".conntext"))
 CONFIG, PENDING, PAUSED, LOG = HOME / "config.json", HOME / "pending", HOME / "paused", HOME / "client.log"
+ACTIVE = HOME / "active"                 # OpenCode 플러그인이 쓰는 '이 프로세스의 지금 세션'(파일 이름이 OpenCode pid)
 SERVER_POLICY = HOME / "policy.json"     # 세션 시작 때 서버가 알려 준 클라이언트 정책(체크포인트 간격)
 PRIVATE = re.compile(r"<private>[\s\S]*?</private>", re.I)
 MAX_TRANSCRIPT_BYTES = 3 * 1024 * 1024
 STALE_SECONDS = 6 * 3600
 POLL_SECONDS = float(os.environ.get("CONNTEXT_POLL_SECONDS") or 2)
-RETRY_SECONDS = (10, 30)          # 지연 업로드가 실패했을 때 다시 시도하는 간격
+RETRY_SECONDS = (10, 30)
+PROMPT_TIMEOUT = float(os.environ.get("CONNTEXT_PROMPT_TIMEOUT") or 2.5)   # 질문마다 관련 메모를 기다리는 최대 시간          # 지연 업로드가 실패했을 때 다시 시도하는 간격
 
 
 def log(msg):
@@ -135,6 +138,11 @@ def hook_session_start(inp):
                     spawn_upload(m)
             except (OSError, ValueError):
                 continue
+        # 끝난 OpenCode 프로세스의 '지금 세션' 표시를 지운다.
+        if ACTIVE.exists():
+            for a in ACTIVE.glob("*.json"):
+                if a.stem.isdigit() and not pid_alive(int(a.stem)):
+                    a.unlink(missing_ok=True)
         if sid and inp.get("transcript_path") and not paused:
             marker_path(sid).write_text(json.dumps({"session_id": sid, "transcript_path": inp["transcript_path"], "cwd": cwd,
                                                     "project": project, "platform": platform_name()}))
@@ -173,6 +181,21 @@ def hook_upload(inp, final):
     d["reason"] = inp.get("reason") or inp.get("trigger") or ""
     m.write_text(json.dumps(d))
     spawn_upload(m, final)
+
+
+def hook_prompt(inp, event_name="UserPromptSubmit"):
+    """질문마다 관련 메모(#12). 서버가 관련도가 충분한 메모만 돌려주고, 없으면 아무것도 넣지 않는다.
+    질문을 늦추지 않도록 짧게 기다리고, 실패하면 조용히 넘어간다. 질문 원문은 서버에 저장되지 않는다."""
+    prompt = PRIVATE.sub(" ", inp.get("prompt") or "").strip()
+    if len(prompt) < 6 or prompt.startswith("/"):
+        return
+    cwd = inp.get("cwd") or os.getcwd()
+    paused = PAUSED.exists()
+    res = request("/api/hooks/prompt", {"platform": platform_name(), "session_id": "" if paused else (inp.get("session_id") or ""),
+                                        "project": project_of(cwd), "prompt": prompt[:4000]}, timeout=PROMPT_TIMEOUT)
+    ctx = (res or {}).get("context") or ""
+    if ctx:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event_name, "additionalContext": ctx}}, ensure_ascii=False))
 
 
 def checkpoint_every():
@@ -389,6 +412,8 @@ def cmd_hook(event):
             hook_upload(inp, False)
         elif event == "turn":
             hook_turn(inp)
+        elif event == "prompt":
+            hook_prompt(inp)
     except Exception as e:
         log(f"hook {event}: {type(e).__name__}: {e}")
         try:
@@ -402,6 +427,13 @@ def cmd_hook(event):
 PROJECT_TOOLS = {"remember", "recall", "resume", "handoff"}
 
 
+def active_session(pid):
+    try:
+        return json.loads((ACTIVE / f"{int(pid)}.json").read_text()).get("session_id") or None
+    except (OSError, ValueError, AttributeError, TypeError):
+        return None
+
+
 def cmd_mcp():
     """표준 입출력 JSON-RPC를 서버의 /mcp로 중계한다. 도구 호출에 현재 저장소를 채워 넣는다."""
     project = None if opted_out(os.getcwd()) else project_of(os.getcwd())
@@ -409,6 +441,14 @@ def cmd_mcp():
     if sess:
         os.environ["CONNTEXT_SESSION"] = sess
     for line in sys.stdin:
+        if not sess:
+            # OpenCode는 MCP 프로세스에 세션 id를 주지 않는다. 부모(OpenCode) 프로세스의 플러그인이 적어 둔 지금 세션을 쓴다.
+            # 그래야 mark_used가 질문 단위 주입과 같은 세션으로 이어진다(리뷰 PR #24).
+            cur = active_session(os.getppid())
+            if cur:
+                os.environ["CONNTEXT_SESSION"] = cur
+            else:
+                os.environ.pop("CONNTEXT_SESSION", None)
         line = line.strip()
         if not line:
             continue

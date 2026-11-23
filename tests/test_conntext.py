@@ -1004,6 +1004,87 @@ class TestCheckpointExtract(Base):
         self.assertEqual(sessions.split_new("abc def ghi", "def"), ("abc def", " ghi"))
 
 
+class TestPromptRecall(Base):
+    """질문마다 관련 메모 넣기(#12)."""
+    def setUp(self):
+        super().setUp()
+        self.bond = pipeline.remember(self.alice, "본딩 정보는 /data/bt/bond.db에 저장된다. 공장 초기화 때 이 파일을 지우지 않으면 재페어링이 실패한다", project_key=GW)["memo_id"]
+        self.stg = pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능. 화요일은 QA 회귀 테스트와 겹친다", project_key=GW)["memo_id"]
+        pipeline.remember(self.alice, "답변은 항상 한국어로 해 줘", kind="instruction")
+
+    def ctx(self, prompt, sid=None, user=None, log=True):
+        return retrieval.prompt_context(user or self.alice, prompt, GW, sid, "claude-code", log=log)
+
+    def test_related_memo_only(self):
+        r = self.ctx("본딩 정보 어디 저장돼?")
+        self.assertEqual(r["memo_ids"], [self.bond])
+        self.assertIn("[내 메모] m:", r["text"])
+        self.assertIn("bond.db", r["text"])
+        self.assertLessEqual(r["tokens"], db.policy("prompt_recall")["token_budget"])
+        self.assertEqual(self.ctx("스테이징에 배포하려고 하는데 언제 가능해?")["memo_ids"], [self.stg])
+        for q in ("테스트 돌려 줘", "README 오타 좀 고쳐 줘", "파이썬 리스트 정렬하는 법 알려줘", "커밋해 줘", "/conntext:recall 본딩 정보", "짧음"):
+            self.assertEqual(self.ctx(q)["text"], "", q)
+        # 질문 내용어가 하나만 겹치면 넣지 않는다(키워드 일치 조건)
+        self.assertEqual(self.ctx("배포 로그 레벨 올려 줘")["memo_ids"], [])
+
+    def test_not_repeated_in_same_session_and_logged(self):
+        self.assertEqual(self.ctx("본딩 정보 어디 저장돼?", "s1")["memo_ids"], [self.bond])
+        self.assertEqual(self.ctx("본딩 정보 파일 경로 다시 알려줘", "s1")["memo_ids"], [])
+        self.assertEqual(self.ctx("본딩 정보 어디 저장돼?", "s2")["memo_ids"], [self.bond])
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 3)
+        self.assertEqual(db.val("SELECT COUNT(*) FROM memo_uses WHERE kind='prompt'"), 2)
+        self.ctx("테스트 돌려 줘", "s1")                                 # 내용어가 없는 질문도 질문 한 번으로 센다
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 4)
+        retrieval.mark_used(self.alice, [self.bond], "s1")
+        q = admin.overview()["quality"]
+        self.assertEqual((q["prompt_calls_7d"], q["prompt_hit_7d"], q["prompt_memos_7d"], q["prompt_used_7d"]), (4, 2, 2, 1))
+        # 다른 세션이나 세션 id 없는 쓰임, 다른 사용자의 쓰임은 이 주입의 쓰임으로 세지 않는다
+        retrieval.mark_used(self.bob, [self.bond], "s2")
+        retrieval.mark_used(self.alice, [self.bond], None)
+        retrieval.mark_used(self.alice, [self.bond], "other")
+        self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 1)
+        # 넣은 뒤 같은 메모를 recall로 다시 찾고 쓴 것은 어느 쪽 덕인지 알 수 없어 세지 않는다
+        db.insert("memo_uses", memo_id=self.bond, user_id=self.alice["id"], kind="recall", session_ext_id="s2", created_at=db.now())
+        retrieval.mark_used(self.alice, [self.bond], "s2")
+        self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 1)
+        self.assertEqual(self.ctx("공장 초기화 재페어링 본딩", "s9")["memo_ids"], [self.bond])
+        retrieval.mark_used(self.alice, [self.bond], "s9")
+        self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 2)
+        # 기록은 30일 뒤 지운다
+        db.ex("UPDATE prompt_injections SET created_at=? WHERE id=1", db.now() - 31 * 86400)
+        sessions.maintenance()
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 4)
+        # 미리 보기는 기록을 남기지 않는다
+        self.ctx("본딩 정보 어디 저장돼?", "s3", log=False)
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 4)
+
+    def test_switches(self):
+        db.update("users", self.alice["id"], prompt_recall_off=1)
+        alice = db.one("SELECT * FROM users WHERE id=?", self.alice["id"])
+        r = self.ctx("본딩 정보 어디 저장돼?", user=alice)
+        self.assertEqual((r["text"], r["enabled"]), ("", False))
+        db.set_policy("prompt_recall", {**db.DEFAULT_POLICIES["prompt_recall"], "enabled": False})
+        self.assertEqual(self.ctx("본딩 정보 어디 저장돼?")["text"], "")
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 0)
+
+    def test_private_and_tiers(self):
+        self.assertEqual(self.ctx("<private>본딩 정보 어디 저장돼</private> 안녕하세요 반갑습니다")["memo_ids"], [])
+        c = pipeline.remember(self.alice, "OTA 청크 크기는 MTU 247 기준 244바이트로 잡는다", project_key=GW, source="session", trust="low")["memo_id"]
+        r = self.ctx("OTA 청크 크기 얼마로 잡았지?")
+        self.assertEqual(r["memo_ids"], [c])
+        self.assertIn("[세션 자동 추출·미확인]", r["text"])
+        # 팀에 올린 내 사본은 원본과 함께 나오지 않는다
+        pipeline.promote(self.alice, [self.bond], self.team)
+        self.assertEqual(self.ctx("본딩 정보 어디 저장돼?", "t1")["memo_ids"], [self.bond])
+        r = self.ctx("본딩 정보 어디 저장돼?", user=self.bob)
+        self.assertIn("[팀 지식 · 앨리스]", r["text"])
+
+    def test_terms(self):
+        self.assertEqual(retrieval.prompt_terms("스테이징에 배포하려고 하는데 언제 가능해?"), ["스테이징", "배포"])
+        self.assertEqual(retrieval.prompt_terms("테스트 돌려 줘"), [])
+        self.assertIn("15ms", retrieval.prompt_terms("BLE 연결 간격 15ms로 줄여도 될까?"))
+
+
 class TestTeam(Base):
     def test_promote_is_a_copy_with_provenance(self):
         a = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge", project_key=GW)
@@ -1666,6 +1747,20 @@ class TestHTTP(Base):
         sid = db.val("SELECT id FROM sessions WHERE ext_id='cc-x'")
         self.assertEqual(self.call("DELETE", f"/api/sessions/{sid}")[0], 200)
         self.assertEqual(db.val("SELECT COUNT(*) FROM session_lines"), 0)
+
+    def test_prompt_hook_preview_and_switch(self):
+        self.call("POST", "/api/memos", {"text": "본딩 정보는 /data/bt/bond.db에 저장된다. 공장 초기화 때 지우지 않으면 재페어링이 실패한다", "project_key": GW})
+        code, r = self.call("POST", "/api/hooks/prompt", {"platform": "claude-code", "session_id": "p1", "project": "git@github.com:connectivity/ble-gateway.git",
+                                                          "prompt": "본딩 정보 어디 저장돼?"})
+        self.assertEqual(code, 200)
+        self.assertIn("bond.db", r["context"])
+        code, r = self.call("POST", "/api/agent/prompt-preview", {"prompt": "본딩 정보 어디 저장돼?", "project": GW})
+        self.assertEqual((code, len(r["items"])), (200, 1))
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 1)        # 미리 보기는 기록하지 않음
+        self.assertEqual(self.call("PUT", "/api/me", {"prompt_recall_off": True})[0], 200)
+        self.assertEqual(self.call("GET", "/api/me")[1]["user"]["prompt_recall_off"], 1)
+        code, r = self.call("POST", "/api/hooks/prompt", {"session_id": "p2", "project": GW, "prompt": "본딩 정보 어디 저장돼?"})
+        self.assertEqual(r["context"], "")
 
     def test_procedure_when_edit_and_get_topic(self):
         _, r = self.call("POST", "/api/memos", {"text": "스테이징 배포 절차:\n1. `make build`\n2. `make deploy STAGE=stg`", "project_key": GW})

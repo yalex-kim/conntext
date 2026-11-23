@@ -25,6 +25,7 @@ MIGRATIONS = [
     ("topics", "kind", "TEXT NOT NULL DEFAULT 'knowledge'"),
     ("sessions", "extracted_tail", "TEXT"),
     ("sessions", "checkpoints", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "prompt_recall_off", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -118,6 +119,9 @@ DEFAULT_POLICIES = {
                 "checkpoint_turns": 10},
     "retention": {"transcript_days": 90, "candidate_days": 30, "state_days": 14, "candidate_promote_uses": 2},
     "injection": {"token_budget": 1500, "max_instructions": 12, "instruction_chars": 1200, "max_procedures": 20, "max_topics": 40},
+    # 질문마다 관련 메모 넣기(#12). 질문의 내용어가 메모에 둘 이상 있고(키워드 일치) 관련도가 min_score 이상인 것만,
+    # 같은 세션에서 이미 넣은 메모는 빼고, 최대 max_memos개를 token_budget 안에서 넣는다. 사용자는 웹에서 끌 수 있다.
+    "prompt_recall": {"enabled": True, "max_memos": 3, "token_budget": 400, "min_score": 0.35},
     # 예산을 넘으면 최근 24시간 사용량이 다시 예산 아래로 내려갈 때까지 규칙 기반으로 처리한다(llm._over_budget).
     "budget": {"daily_tokens_per_user": 400000},
     "clients": {"min_plugin_version": config.MIN_PLUGIN_VERSION},

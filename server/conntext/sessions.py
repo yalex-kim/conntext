@@ -153,6 +153,7 @@ def checkpoint_turns():
         return 0
 
 
+PROMPT_LOG_DAYS = 30   # 질문 단위 주입 기록(prompt_injections) 보존 기간
 ANCHOR_CHARS = 200     # 추출을 마친 지점을 다음 대화록에서 찾을 때 쓰는 끝부분 길이
 MIN_DELTA_CHARS = 40   # 새로 이어진 부분이 이보다 짧으면 체크포인트 추출을 건너뛴다
 
@@ -332,6 +333,8 @@ def maintenance():
     # 쓰이지 않은 세션 추출 후보 만료
     cut = now - ret["candidate_days"] * 86400
     db.ex("UPDATE memos SET status='expired', updated_at=? WHERE trust='low' AND status='active' AND use_count=0 AND created_at<?", now, cut)
+    # 질문 단위 주입 기록은 운영 지표(최근 7일)에만 쓰므로 30일이 지나면 지운다(리뷰 PR #24).
+    db.ex("DELETE FROM prompt_injections WHERE created_at<?", now - PROMPT_LOG_DAYS * 86400)
     # 진행 상태 만료
     db.ex("UPDATE memos SET status='expired', updated_at=? WHERE kind='state' AND status='active' AND expires_at IS NOT NULL AND expires_at<?", now, now)
     # 삭제한 메모의 본문은 7일 뒤 실제로 지운다(그 전까지는 되돌릴 수 있다).

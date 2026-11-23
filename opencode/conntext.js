@@ -15,6 +15,9 @@ import { mkdir, writeFile, rename, rm } from "node:fs/promises"
 const HOME = process.env.CONNTEXT_HOME || join(homedir(), ".conntext")
 const CLIENT = join(HOME, "bin", "conntext.py")
 const PENDING = join(HOME, "pending")
+// 이 OpenCode 프로세스의 지금 세션. MCP 프록시가 읽어 mark_used를 세션에 잇는다. MCP 호출에는 세션 정보가 없어서,
+// 한 프로세스에서 두 세션이 동시에 돌면 마지막으로 질문한 세션으로 기록된다(운영 지표의 쓰임 비율에만 영향).
+const ACTIVE = join(HOME, "active")
 // OpenCode를 켜 둔 채 쉬고 있을 때, 마지막 응답 뒤 이만큼 조용하면 끝난 것으로 보고 올린다.
 // 업로드마다 서버가 추출(LLM 호출)을 한 번 하므로 너무 짧게 잡지 않는다. OpenCode를 끄면 기다리지 않는다.
 const IDLE_UPLOAD_SECONDS = Number(process.env.CONNTEXT_IDLE_UPLOAD_SECONDS) || 300
@@ -48,6 +51,7 @@ const marker = (id) => join(PENDING, id.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0
 
 export const Conntext = async ({ client, directory }) => {
   const contexts = new Map()   // sessionID → Promise<string>
+  const related = new Map()    // sessionID → Promise<string>: 마지막 질문에 관련된 메모(#12). 같은 질문의 여러 단계에 다시 쓴다
   const children = new Set()   // 하위 에이전트 세션은 기록하지 않는다
 
   const context = (sessionID) => {
@@ -57,6 +61,22 @@ export const Conntext = async ({ client, directory }) => {
       }))
     }
     return contexts.get(sessionID)
+  }
+
+  const LAZY = Symbol("lazy")
+  const partsText = (parts) => (parts || []).filter((p) => p.type === "text" && !p.synthetic).map((p) => p.text).join("\n").trim()
+  const askRelated = (sessionID, prompt) =>
+    run(["hook", "prompt"], JSON.stringify({ session_id: sessionID, cwd: directory, prompt }), 4000).then((out) => {
+      try { return JSON.parse(out).hookSpecificOutput.additionalContext || "" } catch { return "" }
+    })
+  const latestPrompt = async (sessionID) => {
+    try {
+      const res = await client.session.messages({ path: { id: sessionID } })
+      const users = (res?.data || []).filter((m) => m.info?.role === "user")
+      return users.length ? partsText(users[users.length - 1].parts) : ""
+    } catch {
+      return ""
+    }
   }
 
   const snapshot = async (sessionID) => {
@@ -90,6 +110,22 @@ export const Conntext = async ({ client, directory }) => {
       if (!input.sessionID || children.has(input.sessionID)) return
       const text = await context(input.sessionID)
       if (text) output.system.push(text)
+      let extra = related.get(input.sessionID)
+      if (extra === LAZY) {
+        // chat.message가 질문 내용을 주지 않은 경우(일부 OpenCode 판은 parts가 빈 배열이다): 저장된 마지막 사용자 메시지를 읽는다.
+        extra = latestPrompt(input.sessionID).then((prompt) => (prompt ? askRelated(input.sessionID, prompt) : ""))
+        related.set(input.sessionID, extra)
+      }
+      extra = await (extra || Promise.resolve(""))
+      if (extra) output.system.push(extra)
+    },
+    "chat.message": async (input, output) => {
+      try {
+        if (!input.sessionID || children.has(input.sessionID)) return
+        const prompt = partsText(output.parts)
+        related.set(input.sessionID, prompt ? askRelated(input.sessionID, prompt) : LAZY)
+        mkdir(ACTIVE, { recursive: true }).then(() => writeFile(join(ACTIVE, `${process.pid}.json`), JSON.stringify({ session_id: input.sessionID }))).catch(() => {})
+      } catch {}
     },
     event: async ({ event }) => {
       try {
