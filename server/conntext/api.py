@@ -592,7 +592,7 @@ def hook_start(req):
         text = (text or "# Conntext\n") + f"\n이 세션의 Conntext project: {pk}\n"
     minv = db.policy("clients").get("min_plugin_version")
     return {"context": text, "tokens": ctx["tokens"], "project": pk, "min_plugin_version": minv,
-            "paused": bool(req.user["capture_paused"])}
+            "paused": bool(req.user["capture_paused"]), "checkpoint_turns": sessions.checkpoint_turns()}
 
 
 @route("POST", "/api/hooks/session-upload")

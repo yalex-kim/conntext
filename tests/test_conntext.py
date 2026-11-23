@@ -919,6 +919,79 @@ class TestSessions(Base):
         self.assertEqual(self.memo(c["memo_id"])["status"], "expired")
 
 
+class TestCheckpointExtract(Base):
+    """체크포인트와 거듭된 업로드는 이미 추출한 부분 뒤만 본다(#18)."""
+    A = "사용자: 토큰 갱신 테스트 실패 원인 찾아줘\n에이전트: 원인은 시계 오차 허용 범위가 0초로 설정돼 있기 때문입니다. LEEWAY를 30초로 바꿨습니다.\n남은 일: broker ACL 캐시 TTL 확인"
+    B = "\n사용자: ACL 캐시도 봐 줘\n에이전트: 원인은 ACL 캐시 TTL이 5분이라 옛 토큰을 들고 있기 때문입니다. 30초로 줄여 해결했습니다.\n남은 일: 스테이징 배포"
+
+    def up(self, text, final=False):
+        return sessions.upload(self.alice, "claude-code", "cp", GW, transcript=text, final=final, reason=None if final else "checkpoint")
+
+    def test_checkpoint_then_final_extracts_only_new_part(self):
+        r = self.up(self.A)
+        self.assertEqual(r["status"], "checkpoint")
+        self.assertTrue(db.val("SELECT 1 FROM jobs WHERE kind='session_checkpoint' AND status='queued'"))
+        jobs.drain()
+        s = db.one("SELECT * FROM sessions WHERE id=?", r["session_id"])
+        self.assertEqual((s["status"], s["checkpoints"]), ("open", 1))
+        self.assertTrue(self.A.endswith(s["extracted_tail"]))
+        first = db.q("SELECT body FROM memos WHERE origin_session_id=? AND kind!='state'", s["id"])
+        self.assertIn("ACL", retrieval.resume(self.alice, GW)["state"]["body"])
+        self.up(self.A + self.B)
+        jobs.drain()
+        s = db.one("SELECT * FROM sessions WHERE id=?", s["id"])
+        self.assertEqual(s["checkpoints"], 2)
+        bodies = [m["body"] for m in db.q("SELECT body FROM memos WHERE origin_session_id=? AND kind!='state'", s["id"])]
+        self.assertEqual(len(bodies), len(set(bodies)))
+        self.assertTrue(any("TTL이 5분" in b for b in bodies))
+        self.assertEqual(sum("시계 오차" in b for b in bodies), sum("시계 오차" in m["body"] for m in first))
+        self.assertIn("스테이징", retrieval.resume(self.alice, GW)["state"]["body"])
+        # 새 부분이 없는 최종 업로드는 LLM을 부르지 않고 마무리만 한다
+        self.up(self.A + self.B, final=True)
+        jobs.drain()
+        s = db.one("SELECT * FROM sessions WHERE id=?", s["id"])
+        self.assertEqual(s["status"], "extracted")
+        self.assertEqual(db.val("SELECT result FROM trace WHERE session_id=? AND stage='session_extract' ORDER BY id DESC LIMIT 1", s["id"]), "skip:no-new-lines")
+
+    def test_checkpoint_off_by_policy(self):
+        db.set_policy("capture", {**db.DEFAULT_POLICIES["capture"], "checkpoint_turns": 0})
+        self.up(self.A)
+        self.assertFalse(db.val("SELECT 1 FROM jobs WHERE kind='session_checkpoint'"))
+        # 맥락 압축 직전 업로드(사유가 체크포인트가 아님)는 예전처럼 저장만 한다
+        db.set_policy("capture", {**db.DEFAULT_POLICIES["capture"]})
+        sessions.upload(self.alice, "claude-code", "cp2", GW, transcript=self.A, final=False, reason="auto")
+        self.assertFalse(db.val("SELECT 1 FROM jobs WHERE kind='session_checkpoint'"))
+
+    def test_llm_prompt_for_checkpoint_has_previous_state_and_only_new_lines(self):
+        from unittest import mock
+        prompts = []
+        def fake(name, system, prompt, *a, **k):
+            prompts.append((name, prompt))
+            if name in ("session_checkpoint", "session_extract"):
+                return {"summary": "토큰 갱신과 ACL 캐시 수정", "handoff": {"done": ["LEEWAY 30초"], "remaining": ["ACL 캐시 TTL 확인"], "notes": ""},
+                        "candidates": [{"text": "토큰 갱신 실패 원인은 leeway 0초였고 30초로 바꿨다", "kind": "knowledge", "when": ""}]}
+            return None
+        with mock.patch.object(llm, "provider", return_value="anthropic"), mock.patch.object(llm, "complete_json", side_effect=fake):
+            self.up(self.A)
+            jobs.drain()
+            self.up(self.A + self.B)
+            jobs.drain()
+        stages = [n for n, _ in prompts if n.startswith("session")]
+        self.assertEqual(stages, ["session_checkpoint", "session_checkpoint"])   # 비용 지표에서 체크포인트분이 구분된다
+        second = [p for n, p in prompts if n == "session_checkpoint"][1]
+        self.assertIn("이 세션의 앞부분은 이미 처리했다", second)
+        self.assertIn("ACL 캐시 TTL 확인", second)                     # 이전 진행 상태
+        self.assertIn("leeway 0초였고", second)                          # 이미 뽑은 후보
+        new_part = second.split("새 기록:")[1]
+        self.assertIn("ACL 캐시도 봐 줘", new_part)
+        self.assertNotIn("토큰 갱신 테스트 실패 원인 찾아줘", new_part)
+
+    def test_split_new_falls_back_to_whole_when_anchor_missing(self):
+        self.assertEqual(sessions.split_new("abc def", "zzz"), ("", "abc def"))
+        self.assertEqual(sessions.split_new("abc def", None), ("", "abc def"))
+        self.assertEqual(sessions.split_new("abc def ghi", "def"), ("abc def", " ghi"))
+
+
 class TestTeam(Base):
     def test_promote_is_a_copy_with_provenance(self):
         a = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge", project_key=GW)

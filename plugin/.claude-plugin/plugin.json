@@ -1,6 +1,6 @@
 {
   "name": "conntext",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "적어 둔 맥락이 다음 세션과 다른 에이전트로 이어집니다. /conntext:remember로 저장하고 /conntext:recall, /conntext:resume으로 꺼냅니다.",
   "author": { "name": "Connectivity 팀" },
   "keywords": ["memory", "context", "handoff", "wiki"]

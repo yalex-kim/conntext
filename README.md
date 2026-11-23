@@ -73,7 +73,7 @@ python3 /path/to/conntext/plugin/scripts/conntext.py status
 
 플러그인이 하는 일:
 
-- 훅: `SessionStart`에서 맥락(지시·선호, 팀 규칙, 이 저장소의 진행 상태, 절차 색인, 주제 색인)을 넣고, `PreCompact`와 `SessionEnd`에서 대화록을 백그라운드로 올립니다. 훅은 에이전트를 기다리게 하지 않고, 실패하면 조용히 끝나며 `~/.conntext/client.log`에 남깁니다.
+- 훅: `SessionStart`에서 맥락(지시·선호, 팀 규칙, 이 저장소의 진행 상태, 절차 색인, 주제 색인)을 넣고, `PreCompact`와 `SessionEnd`에서 대화록을 백그라운드로 올립니다. `Stop`(응답 한 번이 끝날 때)에서는 턴을 세어, 정책의 `checkpoint_turns`(기본 10)마다 대화 중 체크포인트를 올립니다. 훅은 에이전트를 기다리게 하지 않고, 실패하면 조용히 끝나며 `~/.conntext/client.log`에 남깁니다.
 - MCP: `conntext.py mcp`가 표준 입출력 MCP를 서버의 `/mcp`로 중계하고, 도구 호출에 현재 저장소(`git remote origin`)를 `project`로 채워 넣습니다.
 - 명령어 다섯 개:
 
@@ -210,6 +210,8 @@ data/                기본 DB 위치
 
 세션 대화록은 업로드 → 마스킹과 축약 → 작업 대기열 → 추출(요약, 진행 상태, 지식 후보 최대 5개) 순서로 처리됩니다. 진행 상태는 저장소마다 최신 하나만 유효합니다.
 
+긴 세션은 끝나기 전에도 N턴마다 체크포인트로 올라옵니다(작업 `session_checkpoint`, 비용 단계도 따로 집계). 추출은 매번 **직전 추출 이후 부분만** 봅니다. 진행 상태는 이전 상태를 받아 세션 전체 기준으로 다시 쓰고(다른 에이전트의 `/resume`에 바로 반영), 지식 후보는 새 부분에서만, 앞서 뽑은 후보를 알려 준 채로 뽑습니다. 어디까지 추출했는지는 `sessions.extracted_tail`(대화록 끝 200자)로 기억하고, 찾지 못하면 전체를 다시 봅니다. OpenCode처럼 같은 세션이 여러 번 올라오는 경우도 같은 방식이라 후보가 되풀이되지 않습니다.
+
 ## 다른 서비스에서 붙기
 
 ### 세션 보내기 (connpass 같은 사내 RAG 채팅)
@@ -268,7 +270,7 @@ curl -s -X PUT  $S/api/admin/teams/<팀 id>/members -H "$H" -H 'Content-Type: ap
 | 키 | 기본값 |
 |---|---|
 | `masking_rules` | 마스킹 정규식 목록(`{name, pattern}`) |
-| `capture` | `platforms`, `excluded_projects`(부분 문자열 일치), `max_transcript_chars` 400000 |
+| `capture` | `platforms`, `excluded_projects`(부분 문자열 일치), `max_transcript_chars` 400000, `checkpoint_turns` 10(0이면 대화 중 체크포인트를 끔. 클라이언트는 세션 시작 응답으로 이 값을 받는다) |
 | `retention` | 대화록 90일(에이전트의 `search_sessions` 검색 대상), 쓰이지 않은 후보 30일, 진행 상태 14일, 후보 자동 승격 사용 횟수 2 |
 | `injection` | 세션 시작 맥락 토큰 예산 1500, 지시 최대 12개·1,200자, 절차 색인 최대 20개, 주제 최대 40개(색인은 제목만 넣으므로 보통 예산이 먼저 개수를 정한다) |
 | `budget` | 사용자별 최근 24시간 LLM 토큰 400000. 넘으면 규칙 기반으로 처리 |

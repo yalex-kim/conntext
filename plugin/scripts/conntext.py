@@ -8,6 +8,9 @@
   conntext.py hook <event>                    에이전트 훅 진입점 (stdin으로 훅 JSON)
   conntext.py mcp                             stdio MCP 프록시 (서버 /mcp로 중계)
   conntext.py upload <marker.json>            세션 대화록 업로드 (훅이 백그라운드로 실행)
+  conntext.py hook turn                       응답 한 번이 끝날 때(Stop). N턴마다 체크포인트를 올린다
+  conntext.py upload <marker.json> --checkpoint [--reason R]
+                                              비최종 업로드(맥락 압축 직전, 대화 중 체크포인트)
   conntext.py upload <marker.json> --after N [--pid P]
                                               지연 업로드: 스냅샷이 N초 동안 그대로이거나 프로세스 P가 끝나면 올린다
                                               (OpenCode 플러그인이 session.idle마다 실행. 세션마다 대기 프로세스는 하나)
@@ -17,9 +20,10 @@
 import json, os, re, subprocess, sys, time, urllib.error, urllib.request
 from pathlib import Path
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 HOME = Path(os.environ.get("CONNTEXT_HOME", Path.home() / ".conntext"))
 CONFIG, PENDING, PAUSED, LOG = HOME / "config.json", HOME / "pending", HOME / "paused", HOME / "client.log"
+SERVER_POLICY = HOME / "policy.json"     # 세션 시작 때 서버가 알려 준 클라이언트 정책(체크포인트 간격)
 PRIVATE = re.compile(r"<private>[\s\S]*?</private>", re.I)
 MAX_TRANSCRIPT_BYTES = 3 * 1024 * 1024
 STALE_SECONDS = 6 * 3600
@@ -98,8 +102,13 @@ def marker_path(session_id):
     return PENDING / (re.sub(r"[^A-Za-z0-9_.-]", "_", session_id)[:120] + ".json")
 
 
-def spawn_upload(marker, final=True):
-    args = [sys.executable, os.path.abspath(__file__), "upload", str(marker)] + ([] if final else ["--checkpoint"])
+def turns_path(marker):
+    return Path(str(marker) + ".turns")
+
+
+def spawn_upload(marker, final=True, reason=None):
+    args = [sys.executable, os.path.abspath(__file__), "upload", str(marker)] + ([] if final else ["--checkpoint"]) \
+        + (["--reason", reason] if reason else [])
     kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if os.name == "nt":
         kw["creationflags"] = 0x00000008 | 0x00000200      # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
@@ -136,6 +145,11 @@ def hook_session_start(inp):
                                                "cwd": None if paused else cwd, "project": project,
                                                "source": inp.get("source")}, timeout=4.0)
     ctx = (res or {}).get("context") or ""
+    if res and "checkpoint_turns" in res:
+        try:
+            SERVER_POLICY.write_text(json.dumps({"checkpoint_turns": res["checkpoint_turns"]}))
+        except OSError as e:
+            log(f"policy: {e}")
     if paused and ctx:
         ctx += "\n(이 장비에서는 세션 기록이 꺼져 있습니다.)\n"
     if ctx:
@@ -147,6 +161,7 @@ def hook_upload(inp, final):
     if not sid or PAUSED.exists():
         if final and sid:
             marker_path(sid).unlink(missing_ok=True)
+            turns_path(marker_path(sid)).unlink(missing_ok=True)
         return
     m = marker_path(sid)
     if not m.exists():
@@ -158,6 +173,39 @@ def hook_upload(inp, final):
     d["reason"] = inp.get("reason") or inp.get("trigger") or ""
     m.write_text(json.dumps(d))
     spawn_upload(m, final)
+
+
+def checkpoint_every():
+    """서버가 알려 준 체크포인트 간격. 알려 준 적이 없으면(옛 서버) 끈다."""
+    try:
+        return max(0, int(json.loads(SERVER_POLICY.read_text()).get("checkpoint_turns") or 0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 0
+
+
+def hook_turn(inp):
+    """에이전트가 응답 한 번을 끝낼 때마다 센다. N턴마다 대화록 체크포인트를 백그라운드로 올린다(#18).
+    세션이 끝나기 전에도 진행 상태가 갱신되어 다른 에이전트의 /resume에 반영된다."""
+    sid = inp.get("session_id") or ""
+    every = checkpoint_every()
+    if not sid or not every or PAUSED.exists():
+        return
+    m = marker_path(sid)
+    if not m.exists():
+        if not inp.get("transcript_path"):
+            return
+        cwd = inp.get("cwd") or os.getcwd()
+        PENDING.mkdir(parents=True, exist_ok=True)
+        m.write_text(json.dumps({"session_id": sid, "transcript_path": inp["transcript_path"], "cwd": cwd,
+                                 "project": project_of(cwd), "platform": platform_name()}))
+    t = turns_path(m)
+    try:
+        n = int(t.read_text() or 0) + 1
+    except (OSError, ValueError):
+        n = 1
+    t.write_text(str(n))
+    if n % every == 0:
+        spawn_upload(m, final=False, reason="checkpoint")
 
 
 def read_transcript(path):
@@ -187,7 +235,7 @@ def _unlink_if_unchanged(m, stamp):
         m.unlink(missing_ok=True)
 
 
-def cmd_upload(marker, final=True):
+def cmd_upload(marker, final=True, reason=None):
     m = Path(marker)
     stamp = _stamp(m)
     try:
@@ -201,7 +249,7 @@ def cmd_upload(marker, final=True):
         return 0
     body = {"platform": d.get("platform") or "claude-code", "session_id": d["session_id"], "cwd": d.get("cwd"),
             "project": d.get("project") or project_of(d.get("cwd")),
-            "final": final, "reason": d.get("reason") or ""}
+            "final": final, "reason": reason or d.get("reason") or ""}
     if d.get("messages") is not None:
         body["messages"] = [{**x, "text": PRIVATE.sub("[비공개 처리됨]", x.get("text") or "")} for x in d["messages"]]
     else:
@@ -214,6 +262,7 @@ def cmd_upload(marker, final=True):
         request("/api/hooks/session-upload", body, timeout=60.0)
         if final:
             _unlink_if_unchanged(m, stamp)
+            turns_path(m).unlink(missing_ok=True)
     except Exception as e:           # 다음 세션 시작 때 다시 시도되도록 마커를 남긴다.
         log(f"upload {d.get('session_id')}: {type(e).__name__}: {e}")
         return 1
@@ -338,6 +387,8 @@ def cmd_hook(event):
             hook_upload(inp, True)
         elif event == "pre-compact":
             hook_upload(inp, False)
+        elif event == "turn":
+            hook_turn(inp)
     except Exception as e:
         log(f"hook {event}: {type(e).__name__}: {e}")
         try:
@@ -503,11 +554,11 @@ def main(argv):
     if cmd == "upload":
         if not rest:
             return 2
-        opt = {k: v for k, v in zip(rest[1:], rest[2:]) if k in ("--after", "--pid")}
+        opt = {k: v for k, v in zip(rest[1:], rest[2:]) if k in ("--after", "--pid", "--reason")}
         try:
             if "--after" in opt:
                 return cmd_wait_upload(rest[0], float(opt["--after"]), int(opt["--pid"]) if opt.get("--pid") else None)
-            return cmd_upload(rest[0], "--checkpoint" not in rest)
+            return cmd_upload(rest[0], "--checkpoint" not in rest, opt.get("--reason"))
         except Exception as e:
             log(f"upload {rest[0]}: {type(e).__name__}: {e}")
             return 1

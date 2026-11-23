@@ -32,8 +32,8 @@ const TABS = [
 ];
 const ROLE_LABEL = { user: '개발자', operator: '운영자', auditor: '감사자' };
 const TEAM_ROLE = { member: '구성원', admin: '팀 관리자' };
-const STAGE_LABEL = { session_extract: '세션 추출', analyze: '메모 분석', topic_summary: '주제 문서 생성' };
-const JOB_LABEL = { topic_summary: '주제 문서 생성', reprocess_memo: '메모 재처리', session_extract: '세션 추출', analyze: '메모 분석' };
+const STAGE_LABEL = { session_extract: '세션 추출', session_checkpoint: '대화 중 체크포인트', analyze: '메모 분석', topic_summary: '주제 문서 생성' };
+const JOB_LABEL = { topic_summary: '주제 문서 생성', reprocess_memo: '메모 재처리', session_extract: '세션 추출', session_checkpoint: '대화 중 체크포인트', analyze: '메모 분석' };
 const JOB_STATUS = { done: '완료', failed: '실패', queued: '대기', running: '실행 중' };
 const CMD_LABEL = { 'web:search': '웹 검색', 'web:remember': '웹 저장', mark_used: '쓰임 알림' };
 const ACTION_LABEL = {
@@ -641,6 +641,7 @@ const PFORMS = [
   { key: 'capture', title: '수집', meta: '세션 대화록을 서버로 올리는 조건입니다.', fields: [
     { k: 'platforms', label: '허용 플랫폼', type: 'platforms', hint: '빼면 그 플랫폼의 세션은 대화록을 올리지 않고 후보·진행 상태도 만들지 않습니다. 주입은 계속됩니다.' },
     { k: 'excluded_projects', label: '제외 저장소', type: 'lines', hint: '저장소 주소에 이 글자가 들어가면 대화록을 올리지 않습니다. 한 줄에 하나씩.' },
+    { k: 'checkpoint_turns', label: '대화 중 체크포인트 간격', unit: '턴', min: 0, hint: '세션이 끝나기 전에도 이 턴 수마다 진행 상태를 갱신하고, 새로 나온 부분에서 후보를 뽑습니다. 체크포인트마다 LLM 추출이 한 번 돌아 줄이면 비용이 늘어납니다. 0이면 끕니다(플러그인 0.2.0부터).' },
     { k: 'max_transcript_chars', label: '대화록 최대 길이', unit: '자', min: 1000, step: 1000, hint: '이보다 긴 대화록은 잘라서 올립니다. 줄이면 저장 공간과 추출 비용이 줄고, 긴 세션의 일부 맥락이 빠집니다.' },
   ] },
   { key: 'clients', title: '클라이언트', meta: '플러그인 버전 관리입니다.', fields: [

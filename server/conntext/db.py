@@ -23,6 +23,8 @@ def configure(path=None):
 MIGRATIONS = [
     ("memos", "when_hint", "TEXT"),
     ("topics", "kind", "TEXT NOT NULL DEFAULT 'knowledge'"),
+    ("sessions", "extracted_tail", "TEXT"),
+    ("sessions", "checkpoints", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -111,7 +113,9 @@ DEFAULT_POLICIES = {
         {"name": "주민등록번호", "pattern": r"\b\d{6}-[1-4]\d{6}\b"},
         {"name": "휴대전화 번호", "pattern": r"\b01[016789]-?\d{3,4}-?\d{4}\b"},
     ],
-    "capture": {"platforms": ["claude-code", "opencode", "connpass"], "excluded_projects": [], "max_transcript_chars": 400000},
+    # checkpoint_turns: 대화 중 N턴마다 체크포인트를 올려 진행 상태와 새 지식 후보를 뽑는다. 0이면 끈다(#18).
+    "capture": {"platforms": ["claude-code", "opencode", "connpass"], "excluded_projects": [], "max_transcript_chars": 400000,
+                "checkpoint_turns": 10},
     "retention": {"transcript_days": 90, "candidate_days": 30, "state_days": 14, "candidate_promote_uses": 2},
     "injection": {"token_budget": 1500, "max_instructions": 12, "instruction_chars": 1200, "max_procedures": 20, "max_topics": 40},
     # 예산을 넘으면 최근 24시간 사용량이 다시 예산 아래로 내려갈 때까지 규칙 기반으로 처리한다(llm._over_budget).

@@ -223,6 +223,70 @@ class TestHooks(ClientBase):
         self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
 
 
+class TestCheckpoint(ClientBase):
+    """대화 중 N턴마다 체크포인트(#18)."""
+    def setUp(self):
+        super().setUp()
+        self.setup_client()
+
+    def append(self, tp, user, agent):
+        with open(tp, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": user}}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": agent}]}},
+                               ensure_ascii=False) + "\n")
+
+    def test_turn_hook_uploads_checkpoint_every_n_turns(self):
+        db.set_policy("capture", {**db.DEFAULT_POLICIES["capture"], "checkpoint_turns": 2})
+        tp = self.transcript()
+        payload = {"session_id": "c1", "cwd": str(self.repo), "transcript_path": str(tp)}
+        self.hook("session-start", payload)
+        self.assertEqual(json.loads((self.home / "policy.json").read_text())["checkpoint_turns"], 2)
+        r = self.hook("turn", payload)
+        self.assertEqual((r.returncode, r.stdout), (0, ""))
+        time.sleep(0.5)
+        self.assertIsNone(self.session("c1")["transcript"])          # 1턴: 아직 올리지 않는다
+        self.hook("turn", payload)                                     # 2턴: 체크포인트
+        s = wait_until(lambda: (self.session("c1") or {}).get("transcript") and self.session("c1"))
+        self.assertTrue(s, "체크포인트가 올라가지 않았습니다")
+        self.assertEqual(s["status"], "open")                          # 세션은 아직 진행 중
+        jobs.drain()
+        s = self.session("c1")
+        self.assertEqual((s["checkpoints"], s["status"]), (1, "open"))
+        state = db.one("SELECT body FROM memos WHERE kind='state' AND status='active' AND project_key=?", GW)
+        self.assertIn("스테이징", state["body"])                      # 세션이 끝나기 전에 진행 상태가 갱신된다
+        n_cands = db.val("SELECT COUNT(*) FROM memos WHERE origin_session_id=? AND kind!='state'", s["id"])
+        # 대화가 이어진 뒤 다음 체크포인트는 새 부분만 본다
+        self.append(tp, "OTA 청크 재전송을 고쳐 줘", "원인은 청크 크기를 MTU 한도 이상으로 잡았기 때문입니다. 244바이트로 줄여 해결했습니다.\n남은 일: 실기기 시험")
+        self.hook("turn", payload)
+        self.hook("turn", payload)
+        self.assertTrue(wait_until(lambda: "OTA 청크" in (self.session("c1")["transcript"] or "")))
+        jobs.drain()
+        s = self.session("c1")
+        self.assertEqual(s["checkpoints"], 2)
+        bodies = [r["body"] for r in db.q("SELECT body FROM memos WHERE origin_session_id=? AND kind!='state'", s["id"])]
+        self.assertEqual(len(bodies), len(set(bodies)))                # 같은 후보를 되풀이하지 않는다
+        self.assertGreater(len(bodies), n_cands)
+        self.assertIn("실기기", db.one("SELECT body FROM memos WHERE kind='state' AND status='active' AND project_key=?", GW)["body"])
+        # 세션이 끝나면 남은 부분만 보고 마무리한다
+        self.hook("session-end", {**payload, "reason": "exit"})
+        self.assertTrue(wait_until(lambda: self.session("c1")["status"] == "uploaded"))
+        jobs.drain()
+        self.assertEqual(self.session("c1")["status"], "extracted")
+        self.assertFalse((self.home / "pending" / "c1.json.turns").exists())
+
+    def test_turn_hook_off_when_policy_zero_or_unknown(self):
+        tp = self.transcript()
+        payload = {"session_id": "c2", "cwd": str(self.repo), "transcript_path": str(tp)}
+        for _ in range(12):                                            # 서버가 간격을 알려 준 적이 없다(옛 서버)
+            self.assertEqual(self.hook("turn", payload).returncode, 0)
+        db.set_policy("capture", {**db.DEFAULT_POLICIES["capture"], "checkpoint_turns": 0})
+        self.hook("session-start", payload)
+        for _ in range(12):
+            self.hook("turn", payload)
+        time.sleep(0.5)
+        self.assertIsNone(self.session("c2")["transcript"])
+
+
 class TestOptOut(ClientBase):
     def setUp(self):
         super().setUp()
