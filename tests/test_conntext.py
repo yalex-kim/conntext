@@ -1098,6 +1098,19 @@ class TestProcedure(Base):
         self.assertIn("make deploy STAGE=stg", doc)
         self.assertNotIn("deploy-old", doc)
         self.assertIn(f"[m:{a['memo_id']}]", doc)   # 이력은 번호로만 남긴다
+        # LLM 경로에서도 대체된 판의 본문은 프롬프트에 넘기지 않는다
+        from unittest import mock
+        seen = []
+        def fake(name, system, prompt, *a, **k):
+            seen.append((name, system, prompt))
+            return {"summary": f"1. `make build` [m:{b['memo_id']}]"}
+        with mock.patch.object(llm, "provider", return_value="anthropic"), mock.patch.object(llm, "complete_json", side_effect=fake):
+            pipeline.regenerate_topic(self.topic(b["memo_id"])["id"])
+        name, system, prompt = seen[-1]
+        self.assertEqual(name, "topic_summary")
+        self.assertIn("절차 문서", system)
+        self.assertIn("make deploy STAGE=stg", prompt)
+        self.assertNotIn("deploy-old", prompt)
 
     def test_heuristic_boundaries(self):
         for text, kind in [("배포하려면 먼저 make build 하고 그 다음 make deploy를 실행한다", "procedure"),

@@ -821,6 +821,10 @@ def regenerate_topic(topic_id, user_id=None):
     if llm.provider() != "heuristic" and memos:
         lines = [f"주제: {t['title']}\n", "메모:"]
         for m in memos[:60]:
+            if proc and m["status"] == "superseded":
+                # 절차 문서는 에이전트가 그대로 따른다. 옛 판의 명령이 섞이지 않게 본문을 넘기지 않는다(리뷰 PR #22).
+                lines.append(f"- id {m['id']} [대체됨]: (옛 판. 본문은 싣지 않는다)")
+                continue
             flags = []
             if m["status"] == "superseded":
                 flags.append("대체됨")
