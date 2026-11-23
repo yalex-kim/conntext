@@ -24,6 +24,7 @@ from pathlib import Path
 VERSION = "0.2.0"
 HOME = Path(os.environ.get("CONNTEXT_HOME", Path.home() / ".conntext"))
 CONFIG, PENDING, PAUSED, LOG = HOME / "config.json", HOME / "pending", HOME / "paused", HOME / "client.log"
+ACTIVE = HOME / "active"                 # OpenCode 플러그인이 쓰는 '이 프로세스의 지금 세션'(파일 이름이 OpenCode pid)
 SERVER_POLICY = HOME / "policy.json"     # 세션 시작 때 서버가 알려 준 클라이언트 정책(체크포인트 간격)
 PRIVATE = re.compile(r"<private>[\s\S]*?</private>", re.I)
 MAX_TRANSCRIPT_BYTES = 3 * 1024 * 1024
@@ -137,6 +138,11 @@ def hook_session_start(inp):
                     spawn_upload(m)
             except (OSError, ValueError):
                 continue
+        # 끝난 OpenCode 프로세스의 '지금 세션' 표시를 지운다.
+        if ACTIVE.exists():
+            for a in ACTIVE.glob("*.json"):
+                if a.stem.isdigit() and not pid_alive(int(a.stem)):
+                    a.unlink(missing_ok=True)
         if sid and inp.get("transcript_path") and not paused:
             marker_path(sid).write_text(json.dumps({"session_id": sid, "transcript_path": inp["transcript_path"], "cwd": cwd,
                                                     "project": project, "platform": platform_name()}))
@@ -421,6 +427,13 @@ def cmd_hook(event):
 PROJECT_TOOLS = {"remember", "recall", "resume", "handoff"}
 
 
+def active_session(pid):
+    try:
+        return json.loads((ACTIVE / f"{int(pid)}.json").read_text()).get("session_id") or None
+    except (OSError, ValueError, AttributeError, TypeError):
+        return None
+
+
 def cmd_mcp():
     """표준 입출력 JSON-RPC를 서버의 /mcp로 중계한다. 도구 호출에 현재 저장소를 채워 넣는다."""
     project = None if opted_out(os.getcwd()) else project_of(os.getcwd())
@@ -428,6 +441,14 @@ def cmd_mcp():
     if sess:
         os.environ["CONNTEXT_SESSION"] = sess
     for line in sys.stdin:
+        if not sess:
+            # OpenCode는 MCP 프로세스에 세션 id를 주지 않는다. 부모(OpenCode) 프로세스의 플러그인이 적어 둔 지금 세션을 쓴다.
+            # 그래야 mark_used가 질문 단위 주입과 같은 세션으로 이어진다(리뷰 PR #24).
+            cur = active_session(os.getppid())
+            if cur:
+                os.environ["CONNTEXT_SESSION"] = cur
+            else:
+                os.environ.pop("CONNTEXT_SESSION", None)
         line = line.strip()
         if not line:
             continue

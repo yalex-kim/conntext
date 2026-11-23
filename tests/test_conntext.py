@@ -1038,14 +1038,20 @@ class TestPromptRecall(Base):
         retrieval.mark_used(self.alice, [self.bond], "s1")
         q = admin.overview()["quality"]
         self.assertEqual((q["prompt_calls_7d"], q["prompt_hit_7d"], q["prompt_memos_7d"], q["prompt_used_7d"]), (4, 2, 2, 1))
-        # 세션 id 없이 온 쓰임 알림(OpenCode MCP)도 같은 사용자가 곧 쓴 것이면 센다. 다른 사용자의 쓰임은 세지 않는다
-        retrieval.mark_used(self.bob, [self.bond], None)
-        self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 1)
+        # 다른 세션이나 세션 id 없는 쓰임, 다른 사용자의 쓰임은 이 주입의 쓰임으로 세지 않는다
+        retrieval.mark_used(self.bob, [self.bond], "s2")
         retrieval.mark_used(self.alice, [self.bond], None)
+        retrieval.mark_used(self.alice, [self.bond], "other")
+        self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 1)
+        retrieval.mark_used(self.alice, [self.bond], "s2")
         self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 2)
+        # 기록은 30일 뒤 지운다
+        db.ex("UPDATE prompt_injections SET created_at=? WHERE id=1", db.now() - 31 * 86400)
+        sessions.maintenance()
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 3)
         # 미리 보기는 기록을 남기지 않는다
         self.ctx("본딩 정보 어디 저장돼?", "s3", log=False)
-        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 4)
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 3)
 
     def test_switches(self):
         db.update("users", self.alice["id"], prompt_recall_off=1)

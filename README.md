@@ -93,7 +93,7 @@ python3 /path/to/conntext/plugin/scripts/conntext.py install opencode
 
 `~/.conntext/bin/conntext.py`에 클라이언트를 복사하고, OpenCode 설정 폴더(`OPENCODE_CONFIG_DIR`, 없으면 `~/.config/opencode`)에 플러그인(`plugins/conntext.js`), 명령어 다섯 개(`commands/*.md`, 이름은 `/remember`, `/recall`, `/resume`, `/handoff`, `/forget`), `opencode.json`의 `mcp.conntext` 항목을 넣습니다. 기존 `opencode.json`은 `opencode.json.conntext-backup`으로 남깁니다. OpenCode를 다시 시작하면 적용됩니다.
 
-OpenCode에는 세션 종료 이벤트가 없습니다. 플러그인은 응답이 끝날 때(`session.idle`)마다 대화 스냅샷을 `~/.conntext/pending/`에 쓰고, OpenCode와 분리된 대기 프로세스를 띄웁니다. 대기 프로세스는 OpenCode가 끝나면 곧바로, OpenCode가 켜져 있으면 마지막 응답 뒤 300초(`CONNTEXT_IDLE_UPLOAD_SECONDS`) 동안 대화가 없을 때 올립니다. 세션마다 대기 프로세스는 하나만 남습니다. 질문마다 넣는 메모는 `chat.message`에서 질문을 받아 서버에 묻고, 그 질문의 모델 호출들(`experimental.chat.system.transform`)에 결과를 덧붙입니다. `chat.message`가 질문 내용을 주지 않는 OpenCode 판(1.4.3, parts가 빈 배열)에서는 세션의 마지막 사용자 메시지를 읽어 씁니다. 이 경로는 가짜 OpenCode 클라이언트로만 시험했고 OpenCode를 실제로 띄워 보지는 못했습니다.
+OpenCode에는 세션 종료 이벤트가 없습니다. 플러그인은 응답이 끝날 때(`session.idle`)마다 대화 스냅샷을 `~/.conntext/pending/`에 쓰고, OpenCode와 분리된 대기 프로세스를 띄웁니다. 대기 프로세스는 OpenCode가 끝나면 곧바로, OpenCode가 켜져 있으면 마지막 응답 뒤 300초(`CONNTEXT_IDLE_UPLOAD_SECONDS`) 동안 대화가 없을 때 올립니다. 세션마다 대기 프로세스는 하나만 남습니다. 질문마다 넣는 메모는 `chat.message`에서 질문을 받아 서버에 묻고, 그 질문의 모델 호출들(`experimental.chat.system.transform`)에 결과를 덧붙입니다. `chat.message`가 질문 내용을 주지 않는 OpenCode 판(1.4.3, parts가 빈 배열)에서는 세션의 마지막 사용자 메시지를 읽어 씁니다. OpenCode는 MCP 프로세스에 세션 id를 주지 않아, 플러그인이 지금 세션을 `~/.conntext/active/<OpenCode pid>.json`에 적고 MCP 프록시가 이를 읽어 `mark_used`를 세션에 잇습니다. 이 경로는 가짜 OpenCode 클라이언트로만 시험했고 OpenCode를 실제로 띄워 보지는 못했습니다.
 
 ### 저장소 없이 받기
 

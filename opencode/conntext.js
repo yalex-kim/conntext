@@ -15,6 +15,7 @@ import { mkdir, writeFile, rename, rm } from "node:fs/promises"
 const HOME = process.env.CONNTEXT_HOME || join(homedir(), ".conntext")
 const CLIENT = join(HOME, "bin", "conntext.py")
 const PENDING = join(HOME, "pending")
+const ACTIVE = join(HOME, "active")   // 이 OpenCode 프로세스의 지금 세션. MCP 프록시가 읽어 mark_used를 세션에 잇는다
 // OpenCode를 켜 둔 채 쉬고 있을 때, 마지막 응답 뒤 이만큼 조용하면 끝난 것으로 보고 올린다.
 // 업로드마다 서버가 추출(LLM 호출)을 한 번 하므로 너무 짧게 잡지 않는다. OpenCode를 끄면 기다리지 않는다.
 const IDLE_UPLOAD_SECONDS = Number(process.env.CONNTEXT_IDLE_UPLOAD_SECONDS) || 300
@@ -121,6 +122,7 @@ export const Conntext = async ({ client, directory }) => {
         if (!input.sessionID || children.has(input.sessionID)) return
         const prompt = partsText(output.parts)
         related.set(input.sessionID, prompt ? askRelated(input.sessionID, prompt) : LAZY)
+        mkdir(ACTIVE, { recursive: true }).then(() => writeFile(join(ACTIVE, `${process.pid}.json`), JSON.stringify({ session_id: input.sessionID }))).catch(() => {})
       } catch {}
     },
     event: async ({ event }) => {

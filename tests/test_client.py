@@ -345,6 +345,10 @@ console.log(JSON.stringify(res));
         r = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60, env=self.env, cwd=str(self.repo))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout.strip().splitlines()[-1]), [True, True])
+        # 지금 세션을 적어 두어 MCP 프록시가 mark_used에 세션 id를 붙일 수 있게 한다
+        act = list((self.home / "active").glob("*.json"))
+        self.assertEqual(len(act), 1)
+        self.assertEqual(json.loads(act[0].read_text())["session_id"], "b")
 
 
 class TestOptOut(ClientBase):
@@ -436,6 +440,16 @@ class TestMcpProxy(ClientBase):
         self.assertEqual(rows["재시작 순서는 mqtt-broker 먼저, 그다음 ble-bridge"], GW)
         # 에이전트가 넣은 project는 덮어쓰지 않는다.
         self.assertEqual(rows["OTA 서버 포트는 8443"], "github.com/connectivity/ota-service")
+
+    def test_uses_opencode_active_session_for_mark_used(self):
+        # OpenCode는 MCP 프로세스에 세션 id를 주지 않는다. 부모(OpenCode, 여기서는 시험 프로세스) pid로 적힌 지금 세션을 쓴다.
+        self.setup_client()
+        mid = pipeline.remember(self.user, "본딩 정보는 /data/bt/bond.db에 저장된다", project_key=GW)["memo_id"]
+        (self.home / "active").mkdir(parents=True, exist_ok=True)
+        (self.home / "active" / f"{os.getpid()}.json").write_text(json.dumps({"session_id": "oc-1"}))
+        out = self.mcp([{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "mark_used", "arguments": {"memo_ids": [mid]}}}])
+        self.assertFalse(out[0]["result"]["isError"], out[0])
+        self.assertEqual(db.val("SELECT session_ext_id FROM memo_uses WHERE kind='used'"), "oc-1")
 
     def test_reports_errors_as_jsonrpc(self):
         out = self.mcp([{"jsonrpc": "2.0", "id": 7, "method": "tools/list"}], env={"CONNTEXT_URL": self.url, "CONNTEXT_TOKEN": "ctx_bad"})

@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS injections(
 CREATE TABLE IF NOT EXISTS prompt_injections(
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, platform TEXT, session_ext_id TEXT, project_key TEXT,
   memo_ids TEXT NOT NULL DEFAULT '[]', tokens INTEGER NOT NULL DEFAULT 0, ms REAL NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_prompt_injections_time ON prompt_injections(created_at);
 CREATE TABLE IF NOT EXISTS memo_uses(
   id INTEGER PRIMARY KEY, memo_id INTEGER NOT NULL, user_id INTEGER NOT NULL, kind TEXT NOT NULL, -- inject | recall | used
   session_ext_id TEXT, created_at INTEGER NOT NULL);
