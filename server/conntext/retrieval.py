@@ -177,12 +177,11 @@ def prompt_context(user, prompt, project_key=None, session_ext_id=None, platform
                                            uid, session_ext_id)}
     max_n, budget = int(pol.get("max_memos") or 0), int(pol.get("token_budget") or 0)
     terms = prompt_terms(q)
-    if not terms:
-        return out
-    hits = search(access.space_ids(uid), q, project_key, limit=24, kinds=("knowledge", "procedure"), exclude_ids=tuple(seen), min_score=0.0)
+    # 내용어가 없는 질문("테스트 돌려 줘")도 질문 한 번으로 기록한다. 빼면 운영 화면의 주입 비율이 실제보다 높게 나온다(리뷰 PR #24).
+    hits = search(access.space_ids(uid), q, project_key, limit=24, kinds=("knowledge", "procedure"), exclude_ids=tuple(seen), min_score=0.0) if terms else []
     # 키워드 일치: 질문의 내용어가 메모에 둘 이상 있어야 한다. 내용어가 하나뿐인 질문은 그 말이 영문 식별자(4자 이상)일 때만.
     # 점수: 그 위에 관련도(내용어 비율 + 검색 점수)가 min_score 이상이어야 한다.
-    need = 2 if len(terms) > 1 else (1 if re.match(r"[a-z0-9_.\-]{4,}$", terms[0]) else 99)
+    need = 2 if len(terms) > 1 else (1 if terms and re.match(r"[a-z0-9_.\-]{4,}$", terms[0]) else 99)
     ranked = []
     for m in drop_shadowed(hits):
         n_hit, rel = prompt_relevance(terms, m)

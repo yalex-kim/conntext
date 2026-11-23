@@ -1033,12 +1033,14 @@ class TestPromptRecall(Base):
         self.assertEqual(self.ctx("본딩 정보 어디 저장돼?", "s2")["memo_ids"], [self.bond])
         self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 3)
         self.assertEqual(db.val("SELECT COUNT(*) FROM memo_uses WHERE kind='prompt'"), 2)
+        self.ctx("테스트 돌려 줘", "s1")                                 # 내용어가 없는 질문도 질문 한 번으로 센다
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 4)
         retrieval.mark_used(self.alice, [self.bond], "s1")
         q = admin.overview()["quality"]
-        self.assertEqual((q["prompt_calls_7d"], q["prompt_hit_7d"], q["prompt_memos_7d"], q["prompt_used_7d"]), (3, 2, 2, 1))
+        self.assertEqual((q["prompt_calls_7d"], q["prompt_hit_7d"], q["prompt_memos_7d"], q["prompt_used_7d"]), (4, 2, 2, 1))
         # 미리 보기는 기록을 남기지 않는다
         self.ctx("본딩 정보 어디 저장돼?", "s3", log=False)
-        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 3)
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 4)
 
     def test_switches(self):
         db.update("users", self.alice["id"], prompt_recall_off=1)
