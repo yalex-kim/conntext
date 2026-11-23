@@ -644,7 +644,7 @@ def undo(user, event_id):
 
 
 def undo_last(user):
-    ev = db.one("SELECT id FROM ingest_events WHERE user_id=? AND undone_at IS NULL AND action IN ('remember','forget','promote','kind_change') "
+    ev = db.one("SELECT id FROM ingest_events WHERE user_id=? AND undone_at IS NULL AND action IN ('remember','forget','promote','kind_change','when_change') "
                 "ORDER BY id DESC LIMIT 1", user["id"])
     if not ev:
         raise NotFound("되돌릴 최근 내역이 없습니다.")

@@ -1188,6 +1188,11 @@ class TestProcedure(Base):
         self.assertEqual(self.memo(p["memo_id"])["when_hint"], "stg에 올릴 때")
         pipeline.undo(self.alice, r["event_id"])
         self.assertEqual(self.memo(p["memo_id"])["when_hint"], "스테이징 배포할 때")
+        # forget의 undo_last도 가장 최근 변경인 '언제' 고치기를 되돌린다(앞선 저장을 지우지 않는다)
+        pipeline.set_when(self.alice, p["memo_id"], "stg에 올릴 때")
+        pipeline.undo_last(self.alice)
+        self.assertEqual(self.memo(p["memo_id"])["when_hint"], "스테이징 배포할 때")
+        self.assertEqual(self.memo(k["memo_id"])["status"], "active")
 
     def test_promote_keeps_when_and_procedure_document(self):
         p = pipeline.remember(self.alice, self.STEPS, project_key=GW)
