@@ -1602,6 +1602,16 @@ class TestHTTP(Base):
         self.assertIn("절차 문서", res["content"][0]["text"])
         self.assertTrue(db.val("SELECT COUNT(*) FROM memo_uses WHERE kind='recall'"))
 
+    def test_get_topic_does_not_tell_agent_to_follow_unconfirmed_procedure(self):
+        _, r = self.call("POST", "/api/memos", {"text": "OTA 서버를 로컬에서 띄우려면 먼저 `make db` 하고 그 다음 `make run-ota`를 실행한다", "project_key": GW})
+        mid = r["memo_id"]
+        db.ex("UPDATE memos SET trust='low', source='session' WHERE id=?", mid)
+        text = self.tool("get_topic", {"id": self.memo_topic(mid)})["content"][0]["text"]
+        self.assertIn("실행하지 말고", text)
+        self.assertNotIn("아래 순서와 주의점을 따른다", text)
+        db.ex("UPDATE memos SET trust='high' WHERE id=?", mid)
+        self.assertIn("아래 순서와 주의점을 따른다", self.tool("get_topic", {"id": self.memo_topic(mid)})["content"][0]["text"])
+
     def memo_topic(self, mid):
         return db.val("SELECT topic_id FROM memo_topics WHERE memo_id=?", mid)
 
