@@ -249,7 +249,8 @@ class TestCheckpoint(ClientBase):
         s = wait_until(lambda: (self.session("c1") or {}).get("transcript") and self.session("c1"))
         self.assertTrue(s, "체크포인트가 올라가지 않았습니다")
         self.assertEqual(s["status"], "open")                          # 세션은 아직 진행 중
-        jobs.drain()
+        # 업로드 요청은 대화록을 저장한 뒤 작업을 대기열에 넣는다. 그 사이에 비우면 놓치므로 결과가 나올 때까지 비운다.
+        self.assertTrue(wait_until(lambda: (jobs.drain(), self.session("c1")["checkpoints"] == 1)[1]))
         s = self.session("c1")
         self.assertEqual((s["checkpoints"], s["status"]), (1, "open"))
         state = db.one("SELECT body FROM memos WHERE kind='state' AND status='active' AND project_key=?", GW)
@@ -260,7 +261,7 @@ class TestCheckpoint(ClientBase):
         self.hook("turn", payload)
         self.hook("turn", payload)
         self.assertTrue(wait_until(lambda: "OTA 청크" in (self.session("c1")["transcript"] or "")))
-        jobs.drain()
+        self.assertTrue(wait_until(lambda: (jobs.drain(), self.session("c1")["checkpoints"] == 2)[1]))
         s = self.session("c1")
         self.assertEqual(s["checkpoints"], 2)
         bodies = [r["body"] for r in db.q("SELECT body FROM memos WHERE origin_session_id=? AND kind!='state'", s["id"])]
@@ -269,9 +270,7 @@ class TestCheckpoint(ClientBase):
         self.assertIn("실기기", db.one("SELECT body FROM memos WHERE kind='state' AND status='active' AND project_key=?", GW)["body"])
         # 세션이 끝나면 남은 부분만 보고 마무리한다
         self.hook("session-end", {**payload, "reason": "exit"})
-        self.assertTrue(wait_until(lambda: self.session("c1")["status"] == "uploaded"))
-        jobs.drain()
-        self.assertEqual(self.session("c1")["status"], "extracted")
+        self.assertTrue(wait_until(lambda: (jobs.drain(), self.session("c1")["status"] == "extracted")[1]))
         self.assertFalse((self.home / "pending" / "c1.json.turns").exists())
 
     def test_turn_hook_off_when_policy_zero_or_unknown(self):
