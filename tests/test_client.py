@@ -315,6 +315,38 @@ class TestPromptHook(ClientBase):
         self.assertLess(time.time() - t0, 5)
 
 
+@unittest.skipUnless(__import__("shutil").which("node"), "node가 없으면 OpenCode 플러그인 시험을 건너뜁니다")
+class TestOpenCodePromptRecall(ClientBase):
+    """OpenCode 플러그인의 질문 단위 메모(#12). 일부 판은 chat.message에 빈 parts를 준다(리뷰 PR #24)."""
+    def test_parts_and_empty_parts_fallback(self):
+        self.setup_client()
+        pipeline.remember(self.user, "본딩 정보는 /data/bt/bond.db에 저장된다. 공장 초기화 때 지우지 않으면 재페어링이 실패한다", project_key=GW)
+        (self.home / "bin").mkdir(parents=True, exist_ok=True)
+        (self.home / "bin" / "conntext.py").write_text(CLIENT.read_text())
+        # 옛 node(18)는 package.json 없는 .js를 CommonJS로 읽는다. OpenCode가 하듯 ES 모듈로 읽히게 .mjs로 복사한다.
+        plugin = Path(self.tmp.name) / "conntext.mjs"
+        plugin.write_text((ROOT / "opencode" / "conntext.js").read_text())
+        script = Path(self.tmp.name) / "t.mjs"
+        script.write_text(f"""
+const {{ Conntext }} = await import({json.dumps(plugin.as_uri())});
+const fake = {{ session: {{ messages: async () => ({{ data: [
+  {{ info: {{ role: 'user' }}, parts: [{{ type: 'text', text: '예전 질문' }}] }},
+  {{ info: {{ role: 'user' }}, parts: [{{ type: 'text', text: '본딩 정보 어디 저장돼?' }}] }}] }}) }} }};
+const h = await Conntext({{ client: fake, directory: {json.dumps(str(self.repo))} }});
+const res = [];
+for (const [sid, parts] of [['a', [{{ type: 'text', text: '본딩 정보 어디 저장돼?' }}]], ['b', []]]) {{
+  await h['chat.message']({{ sessionID: sid }}, {{ message: {{}}, parts }});
+  const out = {{ system: [] }};
+  await h['experimental.chat.system.transform']({{ sessionID: sid }}, out);
+  res.push(out.system.some((x) => x.includes('bond.db')));
+}}
+console.log(JSON.stringify(res));
+""")
+        r = subprocess.run(["node", str(script)], capture_output=True, text=True, timeout=60, env=self.env, cwd=str(self.repo))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout.strip().splitlines()[-1]), [True, True])
+
+
 class TestOptOut(ClientBase):
     def setUp(self):
         super().setUp()

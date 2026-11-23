@@ -60,6 +60,22 @@ export const Conntext = async ({ client, directory }) => {
     return contexts.get(sessionID)
   }
 
+  const LAZY = Symbol("lazy")
+  const partsText = (parts) => (parts || []).filter((p) => p.type === "text" && !p.synthetic).map((p) => p.text).join("\n").trim()
+  const askRelated = (sessionID, prompt) =>
+    run(["hook", "prompt"], JSON.stringify({ session_id: sessionID, cwd: directory, prompt }), 4000).then((out) => {
+      try { return JSON.parse(out).hookSpecificOutput.additionalContext || "" } catch { return "" }
+    })
+  const latestPrompt = async (sessionID) => {
+    try {
+      const res = await client.session.messages({ path: { id: sessionID } })
+      const users = (res?.data || []).filter((m) => m.info?.role === "user")
+      return users.length ? partsText(users[users.length - 1].parts) : ""
+    } catch {
+      return ""
+    }
+  }
+
   const snapshot = async (sessionID) => {
     const res = await client.session.messages({ path: { id: sessionID } })
     const messages = []
@@ -91,17 +107,20 @@ export const Conntext = async ({ client, directory }) => {
       if (!input.sessionID || children.has(input.sessionID)) return
       const text = await context(input.sessionID)
       if (text) output.system.push(text)
-      const extra = await (related.get(input.sessionID) || Promise.resolve(""))
+      let extra = related.get(input.sessionID)
+      if (extra === LAZY) {
+        // chat.message가 질문 내용을 주지 않은 경우(일부 OpenCode 판은 parts가 빈 배열이다): 저장된 마지막 사용자 메시지를 읽는다.
+        extra = latestPrompt(input.sessionID).then((prompt) => (prompt ? askRelated(input.sessionID, prompt) : ""))
+        related.set(input.sessionID, extra)
+      }
+      extra = await (extra || Promise.resolve(""))
       if (extra) output.system.push(extra)
     },
     "chat.message": async (input, output) => {
       try {
         if (!input.sessionID || children.has(input.sessionID)) return
-        const prompt = (output.parts || []).filter((p) => p.type === "text" && !p.synthetic).map((p) => p.text).join("\n").trim()
-        if (!prompt) return
-        related.set(input.sessionID, run(["hook", "prompt"], JSON.stringify({ session_id: input.sessionID, cwd: directory, prompt }), 4000).then((out) => {
-          try { return JSON.parse(out).hookSpecificOutput.additionalContext || "" } catch { return "" }
-        }))
+        const prompt = partsText(output.parts)
+        related.set(input.sessionID, prompt ? askRelated(input.sessionID, prompt) : LAZY)
       } catch {}
     },
     event: async ({ event }) => {
