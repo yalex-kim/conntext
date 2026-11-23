@@ -804,7 +804,23 @@ class Handler(BaseHTTPRequestHandler):
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json", "image/svg+xml"):
             ctype += "; charset=utf-8"
         cache = "public, max-age=31536000, immutable" if "/assets/fonts/" in str(f) else "no-cache"
-        self._send(200, f.read_bytes(), ctype, {"Cache-Control": cache})
+        size = f.stat().st_size
+        rng = self.headers.get("Range")
+        if rng and not ctype.startswith("text/"):
+            # 영상은 브라우저가 필요한 구간만 달라고 한다(재생 시작, 건너뛰기). Safari는 이를 지원하지 않으면 재생하지 않는다.
+            m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng.strip())
+            if m and (m.group(1) or m.group(2)):
+                if m.group(1):
+                    a = int(m.group(1)); b = min(int(m.group(2)) if m.group(2) else size - 1, size - 1)
+                else:
+                    a = max(0, size - int(m.group(2))); b = size - 1
+                if a > b or a >= size:
+                    return self._send(416, b"", ctype, {"Content-Range": f"bytes */{size}", "Accept-Ranges": "bytes"})
+                with f.open("rb") as fh:
+                    fh.seek(a)
+                    part = fh.read(b - a + 1)
+                return self._send(206, part, ctype, {"Cache-Control": cache, "Accept-Ranges": "bytes", "Content-Range": f"bytes {a}-{b}/{size}"})
+        self._send(200, f.read_bytes(), ctype, {"Cache-Control": cache, "Accept-Ranges": "bytes"})
 
     def _mcp(self):
         try:

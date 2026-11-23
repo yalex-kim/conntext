@@ -1803,6 +1803,20 @@ class TestHTTP(Base):
         code, r = self.call("POST", "/api/memos", {"text": "담당자 사번은 EMP-123456 이다"})
         self.assertEqual(r["masked"], 1)
 
+    def test_static_range_requests(self):
+        url = f"http://127.0.0.1:{self.port}/assets/video/conntext-promo.mp4"
+        full = (api.config.WEB_DIR / "assets/video/conntext-promo.mp4").read_bytes()
+        for rng, want, cr in [("bytes=0-99", full[:100], f"bytes 0-99/{len(full)}"),
+                              ("bytes=-50", full[-50:], f"bytes {len(full) - 50}-{len(full) - 1}/{len(full)}"),
+                              (f"bytes={len(full) - 10}-", full[-10:], f"bytes {len(full) - 10}-{len(full) - 1}/{len(full)}")]:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"Range": rng}), timeout=10) as r:
+                self.assertEqual((r.status, r.headers["Content-Range"], r.read()), (206, cr, want))
+        with self.assertRaises(urllib.error.HTTPError) as cm:
+            urllib.request.urlopen(urllib.request.Request(url, headers={"Range": f"bytes={len(full)}-"}), timeout=10)
+        self.assertEqual(cm.exception.code, 416)
+        with urllib.request.urlopen(url, timeout=10) as r:
+            self.assertEqual((r.status, r.headers["Accept-Ranges"], len(r.read())), (200, "bytes", len(full)))
+
     def test_static_and_traversal(self):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}/../server/conntext/config.py")
         with self.assertRaises(urllib.error.HTTPError) as cm:
