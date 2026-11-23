@@ -123,6 +123,25 @@ await step('종류 바꾸기와 되돌리기', async () => {
   expect(m.kind === 'knowledge', '되돌린 뒤 종류가 ' + m.kind);
 });
 
+await step('절차: 언제 쓰는지 고치기와 되돌리기', async () => {
+  const r = await api('/api/memos?kind=procedure');
+  const proc = r.memos.find((m) => m.status === 'active');
+  expect(proc, '절차 메모가 없음');
+  await page.goto(`${BASE}/app#/memos/${proc.id}`);
+  await page.waitForSelector('[data-act="when"]');
+  const before = await page.textContent(`#when-slot-${proc.id} .when`);
+  await page.click('[data-act="when"]');
+  await page.fill(`#when-input-${proc.id}`, '[테스트] 게이트웨이를 다시 띄울 때');
+  await page.click(`#when-form-${proc.id} [type=submit]`);
+  await page.waitForSelector('.receipt');
+  expect(/언제 쓰는지 바꿈/.test(await page.textContent('.receipt')), '변경 문구 없음');
+  await page.waitForFunction((id) => document.querySelector(`#when-slot-${id} .when`)?.textContent.includes('[테스트]'), proc.id);
+  await page.click('#receipt-undo');
+  await page.waitForSelector('.receipt--undone');
+  const m = await api(`/api/memos/${proc.id}`);
+  expect(m.when_hint === before, '되돌린 뒤 값이 ' + m.when_hint);
+});
+
 await step('에이전트 화면 저장소 바꾸기', async () => {
   await page.goto(`${BASE}/app#/agent`);
   await page.waitForSelector('.ff__bar');

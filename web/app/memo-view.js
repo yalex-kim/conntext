@@ -10,6 +10,7 @@ import { showReceipt } from './shell.js';
 export const KIND_EFFECT = {
   instruction: '세션을 시작할 때마다 항상 에이전트에 들어갑니다. 저장소 범위면 그 저장소에서만 들어갑니다.',
   knowledge: '주제 문서에 묶입니다. 세션 시작 때는 주제 제목만 색인으로 들어가고, 본문은 관련 있을 때 에이전트가 검색해 꺼냅니다.',
+  procedure: '절차 문서에 묶입니다. 세션 시작 때는 ‘언제 쓰는지 → 절차 제목’만 색인으로 들어가고, 그 작업을 하게 되면 에이전트가 절차를 꺼내 따릅니다.',
   state: '같은 저장소의 다음 세션이 이어받는 진행 상태가 됩니다. 보존 기간이 지나면 만료되고 주제 문서에서는 빠집니다.',
 };
 const USE_LABEL = { inject: '세션 시작에 주입', recall: '검색 결과에 나옴', used: '에이전트가 답에 씀' };
@@ -60,6 +61,7 @@ export async function renderMemoDetail(container, id, opts = {}) {
       <dl class="facts">
         <div><dt>종류</dt><dd>${KIND_LABEL[m.kind] || m.kind}${active && m.can_edit && !editing ? html`<button type="button" class="btn btn--quiet btn--sm" data-act="kind" aria-expanded="false" aria-controls="kind-form-${m.id}">${icon('edit', 'icon--sm')}<span>종류 바꾸기</span></button>` : ''}</dd></div>
         <div class="facts__wide" id="kind-slot-${m.id}"></div>
+        ${m.kind === 'procedure' ? html`<div class="facts__wide"><dt>언제 쓰는지</dt><dd id="when-slot-${m.id}"><span class="when">${m.when_hint || '정해지지 않음'}</span>${active && m.can_edit && !editing ? html`<button type="button" class="btn btn--quiet btn--sm" data-act="when">${icon('edit', 'icon--sm')}<span>고치기</span></button>` : ''}</dd></div>` : ''}
         <div><dt>범위</dt><dd>${projectChip(m.scope === 'project' ? m.project : '')}</dd></div>
         <div><dt>출처</dt><dd>${SOURCE_LABEL[m.source] || m.source}${m.masked_count ? html` · 민감 정보 ${m.masked_count}건 마스킹` : ''}</dd></div>
         <div><dt>공간</dt><dd>${mine ? '내 공간' : m.space_name} · ${m.author_name}</dd></div>
@@ -157,7 +159,7 @@ export async function renderMemoDetail(container, id, opts = {}) {
       btn.setAttribute('aria-expanded', 'true');
       render(slot, html`<form class="kindform" id="kind-form-${m.id}">
         <fieldset><legend class="kindform__lg">어떤 종류로 바꿀까요? 본문은 그대로이고 새 판을 만들지 않습니다.</legend>
-        ${['instruction', 'knowledge', 'state'].map((k) => html`<label class="kindopt${k === m.kind ? ' is-now' : ''}">
+        ${['instruction', 'knowledge', 'procedure', 'state'].map((k) => html`<label class="kindopt${k === m.kind ? ' is-now' : ''}">
           <input type="radio" name="kind" value="${k}" ${k === m.kind ? 'checked disabled' : ''}>
           <span class="kindopt__t"><strong>${KIND_LABEL[k]}</strong>${k === m.kind ? html` <span class="chip">지금</span>` : ''}</span>
           <span class="kindopt__d">${KIND_EFFECT[k]}</span></label>`)}
@@ -180,6 +182,37 @@ export async function renderMemoDetail(container, id, opts = {}) {
         await busy(submit, async () => {
           const res = await api(`/api/memos/${m.id}`, { method: 'PUT', body: { kind } });
           showReceipt(res, { undoneText: `${memoName(m)}의 종류를 ${KIND_LABEL[m.kind]}(으)로 되돌렸습니다.` });
+          emit('memo-saved', res);
+          opts.onChange?.('kind', res);
+        });
+      };
+    });
+    handle('[data-act="when"]', () => {
+      // 절차를 언제 꺼내 쓰는지 한 줄. 에이전트는 세션 시작 색인에서 이 줄만 보고 판단한다.
+      const slot = root.querySelector(`#when-slot-${m.id}`);
+      render(slot, html`<form class="whenform" id="when-form-${m.id}">
+        <label class="sr-only" for="when-input-${m.id}">언제 쓰는 절차인지</label>
+        <input class="input input--sm" id="when-input-${m.id}" maxlength="60" value="${m.when_hint || ''}" placeholder="예: 스테이징에 배포할 때" aria-describedby="when-hint-${m.id}">
+        <button type="submit" class="btn btn--primary btn--sm">저장</button><button type="button" class="btn btn--sm" data-when-cancel>취소</button>
+        <p class="whenform__hint" id="when-hint-${m.id}">에이전트는 세션을 시작할 때 이 한 줄만 보고 절차를 꺼낼지 정합니다. 작업이나 증상을 구체적으로 적으세요.</p>
+      </form>`);
+      const form = slot.querySelector('form');
+      const inp = form.querySelector('input');
+      inp.focus();
+      inp.select();
+      form.querySelector('[data-when-cancel]').onclick = () => paint();
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const when = inp.value.trim();
+        if (!when) {
+          toast('언제 쓰는 절차인지 한 줄로 적어 주세요.', { tone: 'error' });
+          inp.focus();
+          return;
+        }
+        if (when === m.when_hint) return paint();
+        await busy(form.querySelector('[type=submit]'), async () => {
+          const res = await api(`/api/memos/${m.id}`, { method: 'PUT', body: { when } });
+          showReceipt(res, { undoneText: `${memoName(m)}의 ‘언제 쓰는지’를 되돌렸습니다.` });
           emit('memo-saved', res);
           opts.onChange?.('kind', res);
         });

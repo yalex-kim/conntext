@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "server"))
 os.environ["CONNTEXT_LLM"] = "heuristic"
 
-from conntext import access, admin, api, db, jobs, masking, mcp, pipeline, retrieval, sessions  # noqa: E402
+from conntext import access, admin, api, db, jobs, llm, masking, mcp, pipeline, retrieval, sessions  # noqa: E402
 from conntext.access import BadRequest, Forbidden  # noqa: E402
 
 GW = "github.com/connectivity/ble-gateway"
@@ -155,7 +155,7 @@ class TestKindChange(Base):
         return [r["topic_id"] for r in db.q("SELECT topic_id FROM memo_topics WHERE memo_id=?", mid)]
 
     def test_knowledge_to_instruction_and_back(self):
-        a = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge", project_key=GW)
+        a = pipeline.remember(self.alice, "게이트웨이 broker의 기본 포트는 1883이다", project_key=GW)
         mid, tid = a["memo_id"], a["topics"][0]["id"]
         jobs.drain()
         r = pipeline.set_kind(self.alice, mid, "instruction")
@@ -164,7 +164,7 @@ class TestKindChange(Base):
         self.assertEqual(r["topics"], [])
         self.assertIn("지식 → 지시·선호", r["message"])
         self.assertEqual(db.val("SELECT dirty FROM topics WHERE id=?", tid), 1)   # 빠진 주제는 다시 생성 대상
-        self.assertEqual(self.memo(mid)["body"], "게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge")
+        self.assertEqual(self.memo(mid)["body"], "게이트웨이 broker의 기본 포트는 1883이다")
         b = pipeline.set_kind(self.alice, mid, "knowledge")
         self.assertEqual(self.memo(mid)["kind"], "knowledge")
         self.assertEqual(len(self.topics_of(mid)), 1)
@@ -1041,6 +1041,225 @@ class TestProjectKey(unittest.TestCase):
         self.assertIsNone(n(None))
 
 
+class TestProcedure(Base):
+    STEPS = "스테이징 배포 절차:\n1. `make build`\n2. `make deploy STAGE=stg`\n배포 전에 VPN을 켜지 않으면 레지스트리 push가 멈춘다"
+
+    def topic(self, mid):
+        return db.one("SELECT t.* FROM topics t JOIN memo_topics mt ON mt.topic_id=t.id WHERE mt.memo_id=?", mid)
+
+    def test_procedure_gets_when_and_its_own_document(self):
+        p = pipeline.remember(self.alice, self.STEPS, project_key=GW)
+        m = self.memo(p["memo_id"])
+        self.assertEqual(m["kind"], "procedure")
+        self.assertEqual(m["when_hint"], "스테이징 배포할 때")
+        self.assertIn("절차(언제: 스테이징 배포할 때)", p["message"])
+        t = self.topic(m["id"])
+        self.assertEqual(t["kind"], "procedure")
+        # 같은 대상의 사실 메모는 절차 문서가 아니라 지식 문서로 간다
+        k = pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능", project_key=GW)
+        self.assertEqual(k["kind"], "knowledge")
+        self.assertEqual(self.topic(k["memo_id"])["kind"], "knowledge")
+        self.assertNotEqual(self.topic(k["memo_id"])["id"], t["id"])
+        jobs.drain()
+        doc = db.val("SELECT summary FROM topics WHERE id=?", t["id"])
+        self.assertIn("## 스테이징 배포할 때", doc)
+        self.assertIn(f"[m:{m['id']}]", doc)
+
+    def test_procedure_is_not_merged_into_similar_knowledge(self):
+        k = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge", project_key=GW, kind="knowledge")
+        p = pipeline.remember(self.alice, "게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge", project_key=GW)
+        self.assertEqual(p["kind"], "procedure")
+        self.assertEqual((p["status"], p["relation"]), ("active", "none"))
+        self.assertEqual(self.memo(k["memo_id"])["status"], "active")
+        self.assertEqual(self.topic(p["memo_id"])["kind"], "procedure")
+        self.assertTrue(db.val("SELECT 1 FROM links WHERE a_memo=? AND b_memo=? AND relation='related'", p["memo_id"], k["memo_id"]))
+        self.assertIn(self.topic(p["memo_id"])["id"], retrieval.build_context(self.alice, GW, log=False)["topic_ids"])
+        # LLM이 다른 종류의 메모를 중복·보충으로 판정해도 서버가 관련으로 낮춘다
+        from unittest import mock
+        for rel in ("duplicate", "supplement"):
+            fake = {"kind": "procedure", "title": "재시작", "when": "재시작할 때", "entities": [], "relation": rel, "target_id": k["memo_id"],
+                    "related_ids": [], "topic_id": None, "topic_title": "재시작 절차", "_by": "llm"}
+            with mock.patch.object(pipeline, "analyze", return_value=fake):
+                r = pipeline.remember(self.alice, f"게이트웨이 재시작은 broker부터 ({rel})", project_key=GW)
+            self.assertEqual((r["status"], r["relation"], r["kind"]), ("active", "none", "procedure"))
+        # 갱신은 대체하되 종류는 새 내용대로 둔다
+        fake.update(relation="update")
+        with mock.patch.object(pipeline, "analyze", return_value=fake):
+            r = pipeline.remember(self.alice, "게이트웨이 재시작은 broker부터, 10초 뒤 bridge", project_key=GW)
+        self.assertEqual((r["relation"], r["kind"]), ("update", "procedure"))
+        self.assertEqual(self.memo(k["memo_id"])["status"], "superseded")
+        self.assertEqual(self.topic(r["memo_id"])["kind"], "procedure")
+
+    def test_fallback_procedure_doc_omits_superseded_steps(self):
+        a = pipeline.remember(self.alice, "스테이징 배포 절차:\n1. `make build`\n2. `make deploy-old`", project_key=GW)
+        b = pipeline.remember(self.alice, "스테이징 배포 절차:\n1. `make build`\n2. `make deploy STAGE=stg`", project_key=GW, replaces_id=a["memo_id"])
+        jobs.drain()
+        doc = db.val("SELECT summary FROM topics WHERE id=?", self.topic(b["memo_id"])["id"])
+        self.assertIn("make deploy STAGE=stg", doc)
+        self.assertNotIn("deploy-old", doc)
+        self.assertIn(f"[m:{a['memo_id']}]", doc)   # 이력은 번호로만 남긴다
+        # LLM 경로에서도 대체된 판의 본문은 프롬프트에 넘기지 않는다
+        from unittest import mock
+        seen = []
+        def fake(name, system, prompt, *a, **k):
+            seen.append((name, system, prompt))
+            return {"summary": f"1. `make build` [m:{b['memo_id']}]"}
+        with mock.patch.object(llm, "provider", return_value="anthropic"), mock.patch.object(llm, "complete_json", side_effect=fake):
+            pipeline.regenerate_topic(self.topic(b["memo_id"])["id"])
+        name, system, prompt = seen[-1]
+        self.assertEqual(name, "topic_summary")
+        self.assertIn("절차 문서", system)
+        self.assertIn("make deploy STAGE=stg", prompt)
+        self.assertNotIn("deploy-old", prompt)
+
+    def test_heuristic_boundaries(self):
+        for text, kind in [("배포하려면 먼저 make build 하고 그 다음 make deploy를 실행한다", "procedure"),
+                           ("인증서 갱신할 때는 `certbot renew` 후 nginx를 reload한다", "procedure"),
+                           ("릴리스 절차가 격주에서 매주로 바뀌었다", "knowledge"),
+                           ("빌드는 npm 말고 pnpm으로 해 줘", "instruction"),
+                           ("로그인 리팩터링 진행 중, 테스트 수정이 남음", "state")]:
+            self.assertEqual(pipeline.heuristic_kind(text), kind, text)
+        self.assertEqual(pipeline.heuristic_when("배포를 하려면 먼저 빌드한다"), "배포를 할 때")
+        self.assertEqual(pipeline.heuristic_when("게이트웨이 재시작 순서: broker 먼저, 그 다음 bridge"), "게이트웨이 재시작할 때")
+        # 단계부터 시작하면 첫 단계가 아니라 목표(마지막 단계)로 언제를 정한다(리뷰 PR #22)
+        steps = "1. `make build`\n2. `make deploy STAGE=stg`"
+        self.assertEqual(pipeline.heuristic_kind(steps), "procedure")
+        self.assertEqual(pipeline.heuristic_when(steps), "‘make deploy STAGE=stg’로 끝나는 작업을 할 때")
+        self.assertEqual(pipeline.heuristic_when("배포 순서\n1. make build\n2. make deploy"), "배포할 때")
+        p = pipeline.remember(self.alice, steps, project_key=GW)
+        self.assertNotIn("1.", self.topic(p["memo_id"])["title"])
+        self.assertNotIn("make build", self.memo(p["memo_id"])["when_hint"])
+
+    def test_injection_has_procedure_index_before_knowledge(self):
+        p = pipeline.remember(self.alice, self.STEPS, project_key=GW)
+        pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능", project_key=GW)
+        tid = self.topic(p["memo_id"])["id"]
+        ctx = retrieval.build_context(self.alice, GW, log=False)
+        keys = [s["key"] for s in ctx["sections"]]
+        self.assertLess(keys.index("procedures"), keys.index("topics"))
+        proc = next(s for s in ctx["sections"] if s["key"] == "procedures")
+        self.assertEqual([i["topic_id"] for i in proc["items"]], [tid])
+        self.assertIn(f"- 스테이징 배포할 때 → {self.topic(p['memo_id'])['title']} [t:{tid}]", ctx["text"])
+        topics = next(s for s in ctx["sections"] if s["key"] == "topics")
+        self.assertNotIn(tid, [i["topic_id"] for i in topics["items"]])      # 절차 문서는 지식 색인에 두 번 나오지 않는다
+        self.assertIn("get_topic`으로 그 절차를 꺼내", ctx["text"])
+        self.assertNotIn("make deploy", ctx["text"])                            # 본문은 넣지 않는다
+
+    def test_no_procedure_note_without_procedures(self):
+        pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능", project_key=GW)
+        ctx = retrieval.build_context(self.alice, GW, log=False)
+        self.assertNotIn("절차 색인", ctx["text"])
+        # 확인 안 된 세션 후보만 있는 절차는 색인에 넣지 않는다
+        pipeline.remember(self.alice, self.STEPS, project_key=GW, source="session", trust="low")
+        ctx = retrieval.build_context(self.alice, GW, log=False)
+        self.assertNotIn("procedures", [s["key"] for s in ctx["sections"]])
+        self.assertNotIn("절차 색인", ctx["text"])
+
+    def test_procedure_note_dropped_when_section_does_not_fit(self):
+        pipeline.remember(self.alice, self.STEPS, project_key=GW)
+        pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능", project_key=GW)
+        full = retrieval.build_context(self.alice, GW, log=False)
+        proc = next(s for s in full["sections"] if s["key"] == "procedures")
+        # 절차 구역만 안 들어가는 예산: 안내 문구도 함께 빠지고, 그 자리는 다른 내용이 쓴다
+        budget = full["tokens"] - proc["tokens"] + 1
+        db.set_policy("injection", {**db.DEFAULT_POLICIES["injection"], "token_budget": budget})
+        ctx = retrieval.build_context(self.alice, GW, log=False)
+        self.assertFalse(any(s["items"] for s in ctx["sections"] if s["key"] == "procedures"))
+        self.assertTrue(any(s["items"] for s in ctx["sections"] if s["key"] == "topics"))
+        self.assertNotIn("절차 색인의", ctx["text"])
+        self.assertLessEqual(ctx["tokens"], budget)
+        db.set_policy("injection", {**db.DEFAULT_POLICIES["injection"], "max_procedures": 0})
+        ctx = retrieval.build_context(self.alice, GW, log=False)
+        self.assertNotIn("procedures", [s["key"] for s in ctx["sections"]])
+
+    def test_kind_change_to_procedure_moves_document_and_undo_restores(self):
+        k = pipeline.remember(self.alice, "게이트웨이 broker의 기본 포트는 1883이다", project_key=GW)
+        mid = k["memo_id"]
+        old_tid = self.topic(mid)["id"]
+        r = pipeline.set_kind(self.alice, mid, "procedure")
+        m = self.memo(mid)
+        self.assertEqual(m["kind"], "procedure")
+        self.assertTrue(m["when_hint"])
+        self.assertIn("언제 쓰는 절차인지", r["message"])
+        t = self.topic(mid)
+        self.assertEqual(t["kind"], "procedure")
+        self.assertEqual(db.val("SELECT COUNT(*) FROM memo_topics WHERE memo_id=?", mid), 1)
+        pipeline.undo(self.alice, r["event_id"])
+        m = self.memo(mid)
+        self.assertEqual((m["kind"], m["when_hint"]), ("knowledge", None))
+        self.assertEqual(self.topic(mid)["id"], old_tid)
+        self.assertIsNone(db.one("SELECT id FROM topics WHERE id=?", t["id"]))   # 바꾸며 만든 절차 문서는 지운다
+
+    def test_set_when_rules_and_undo(self):
+        p = pipeline.remember(self.alice, self.STEPS, project_key=GW)
+        k = pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능", project_key=GW)
+        with self.assertRaises(BadRequest):
+            pipeline.set_when(self.alice, k["memo_id"], "배포할 때")
+        with self.assertRaises(Forbidden):
+            pipeline.set_when(self.bob, p["memo_id"], "배포할 때")
+        r = pipeline.set_when(self.alice, p["memo_id"], "stg에 올릴 때")
+        self.assertEqual(self.memo(p["memo_id"])["when_hint"], "stg에 올릴 때")
+        pipeline.undo(self.alice, r["event_id"])
+        self.assertEqual(self.memo(p["memo_id"])["when_hint"], "스테이징 배포할 때")
+        # forget의 undo_last도 가장 최근 변경인 '언제' 고치기를 되돌린다(앞선 저장을 지우지 않는다)
+        pipeline.set_when(self.alice, p["memo_id"], "stg에 올릴 때")
+        pipeline.undo_last(self.alice)
+        self.assertEqual(self.memo(p["memo_id"])["when_hint"], "스테이징 배포할 때")
+        self.assertEqual(self.memo(k["memo_id"])["status"], "active")
+
+    def test_promote_keeps_when_and_procedure_document(self):
+        p = pipeline.remember(self.alice, self.STEPS, project_key=GW)
+        pipeline.set_when(self.alice, p["memo_id"], "stg에 올릴 때")
+        res = pipeline.promote(self.alice, [p["memo_id"]], self.team)
+        copy = self.memo(res["created"][0]["memo_id"])
+        self.assertEqual((copy["kind"], copy["when_hint"]), ("procedure", "stg에 올릴 때"))
+        self.assertEqual(self.topic(copy["id"])["kind"], "procedure")
+        ctx = retrieval.build_context(self.bob, GW, log=False)
+        team = next(s for s in ctx["sections"] if s["key"] == "team_procedures")
+        self.assertIn("stg에 올릴 때 →", team["items"][0]["text"])
+
+    def test_merge_rejects_mixed_kinds(self):
+        p = pipeline.remember(self.alice, self.STEPS, project_key=GW)
+        k = pipeline.remember(self.alice, "스테이징 배포는 목요일 오전만 가능", project_key=GW)
+        with self.assertRaises(BadRequest):
+            pipeline.merge_topics(self.alice, self.topic(p["memo_id"])["id"], self.topic(k["memo_id"])["id"])
+
+    def test_session_extraction_keeps_procedure_and_when(self):
+        from unittest import mock
+        out = {"summary": "배포 스크립트 정리", "handoff": {"done": [], "remaining": [], "notes": ""},
+               "candidates": [{"text": "스테이징 배포는 `make build` 뒤 `make deploy STAGE=stg`로 한다. VPN이 꺼져 있으면 push가 멈춘다",
+                               "kind": "procedure", "when": "스테이징에 배포할 때"}]}
+        with mock.patch.object(llm, "provider", return_value="anthropic"), \
+             mock.patch.object(llm, "complete_json", side_effect=lambda name, *a, **k: out if name == "session_extract" else None):
+            sessions.start(self.alice, "claude-code", "sp", GW)
+            r = sessions.upload(self.alice, "claude-code", "sp", GW, transcript=TestSessions.JSONL)
+            jobs.drain()
+        c = db.one("SELECT * FROM memos WHERE origin_session_id=? AND kind!='state'", r["session_id"])
+        self.assertEqual((c["kind"], c["when_hint"], c["trust"]), ("procedure", "스테이징에 배포할 때", "low"))
+
+    def test_mcp_formats_procedure(self):
+        p = pipeline.remember(self.alice, self.STEPS, project_key=GW)
+        text = mcp.fmt_recall(retrieval.recall(self.alice, "스테이징 배포 절차", GW, log=False))
+        self.assertIn("[내 메모] 절차 · 언제: 스테이징 배포할 때", text)
+        self.assertIn(f"m:{p['memo_id']}", text)
+
+    def test_old_database_gets_new_columns(self):
+        path = os.path.join(self.tmp.name, "old.db")
+        import sqlite3
+        # #16 이전 스키마: 지금 스키마에서 새 열 두 개를 뺀 것
+        old_schema = "\n".join(ln for ln in (Path(db.__file__).parent / "schema.sql").read_text().splitlines()
+                               if not ln.strip().startswith(("when_hint TEXT", "kind TEXT NOT NULL DEFAULT 'knowledge',       -- knowledge | procedure")))
+        c = sqlite3.connect(path)
+        c.executescript(old_schema + "\nINSERT INTO topics(space_id, title, created_at, updated_at) VALUES(1, '옛 주제', 0, 0);")
+        self.assertNotIn("when_hint", {r[1] for r in c.execute("PRAGMA table_info(memos)")})
+        c.commit()
+        c.close()
+        db.configure(path)
+        self.assertIn("when_hint", {r["name"] for r in db.q("PRAGMA table_info(memos)")})
+        self.assertEqual(db.val("SELECT kind FROM topics"), "knowledge")
+        db.configure(path)   # 두 번 돌려도 깨지지 않는다
+
+
 class TestHTTP(Base):
     def setUp(self):
         super().setUp()
@@ -1362,6 +1581,39 @@ class TestHTTP(Base):
         sid = db.val("SELECT id FROM sessions WHERE ext_id='cc-x'")
         self.assertEqual(self.call("DELETE", f"/api/sessions/{sid}")[0], 200)
         self.assertEqual(db.val("SELECT COUNT(*) FROM session_lines"), 0)
+
+    def test_procedure_when_edit_and_get_topic(self):
+        _, r = self.call("POST", "/api/memos", {"text": "스테이징 배포 절차:\n1. `make build`\n2. `make deploy STAGE=stg`", "project_key": GW})
+        mid = r["memo_id"]
+        code, m = self.call("GET", f"/api/memos/{mid}")
+        self.assertEqual((m["kind"], m["when_hint"]), ("procedure", "스테이징 배포할 때"))
+        self.assertEqual(m["topics"][0]["kind"], "procedure")
+        code, r = self.call("PUT", f"/api/memos/{mid}", {"when": "stg 서버에 새 빌드를 올릴 때"})
+        self.assertEqual(code, 200, r)
+        self.assertIn("언제 쓰는지 바꿈", r["message"])
+        self.assertEqual(self.memo(mid)["when_hint"], "stg 서버에 새 빌드를 올릴 때")
+        # 본문을 고쳐 새 판을 만들어도 사용자가 고친 '언제'는 그대로 간다
+        code, r = self.call("PUT", f"/api/memos/{mid}", {"text": "스테이징 배포 절차:\n1. `make build`\n2. `make test`\n3. `make deploy STAGE=stg`"})
+        self.assertEqual(self.memo(r["memo_id"])["when_hint"], "stg 서버에 새 빌드를 올릴 때")
+        code, r = self.call("PUT", f"/api/memos/{r['memo_id']}", {"when": "  "})
+        self.assertEqual(code, 400)
+        tid = self.memo_topic(mid)
+        res = self.tool("get_topic", {"id": tid})
+        self.assertIn("절차 문서", res["content"][0]["text"])
+        self.assertTrue(db.val("SELECT COUNT(*) FROM memo_uses WHERE kind='recall'"))
+
+    def test_get_topic_does_not_tell_agent_to_follow_unconfirmed_procedure(self):
+        _, r = self.call("POST", "/api/memos", {"text": "OTA 서버를 로컬에서 띄우려면 먼저 `make db` 하고 그 다음 `make run-ota`를 실행한다", "project_key": GW})
+        mid = r["memo_id"]
+        db.ex("UPDATE memos SET trust='low', source='session' WHERE id=?", mid)
+        text = self.tool("get_topic", {"id": self.memo_topic(mid)})["content"][0]["text"]
+        self.assertIn("실행하지 말고", text)
+        self.assertNotIn("아래 순서와 주의점을 따른다", text)
+        db.ex("UPDATE memos SET trust='high' WHERE id=?", mid)
+        self.assertIn("아래 순서와 주의점을 따른다", self.tool("get_topic", {"id": self.memo_topic(mid)})["content"][0]["text"])
+
+    def memo_topic(self, mid):
+        return db.val("SELECT topic_id FROM memo_topics WHERE memo_id=?", mid)
 
     def test_policy_validation(self):
         code, r = self.call("PUT", "/api/admin/policies/masking_rules", {"value": [{"name": "깨진 규칙", "pattern": "([a-z"}]}, tok="op")

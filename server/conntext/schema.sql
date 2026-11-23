@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS tokens(
 CREATE TABLE IF NOT EXISTS memos(
   id INTEGER PRIMARY KEY, space_id INTEGER NOT NULL, author_id INTEGER NOT NULL,
   body TEXT NOT NULL, title TEXT,
-  kind TEXT NOT NULL DEFAULT 'knowledge',       -- instruction | knowledge | state
+  kind TEXT NOT NULL DEFAULT 'knowledge',       -- instruction | knowledge | procedure | state
+  when_hint TEXT,                               -- procedure: 언제 쓰는 절차인지 한 줄(#16)
   source TEXT NOT NULL DEFAULT 'manual',        -- manual | session | import | promoted
   trust TEXT NOT NULL DEFAULT 'high',           -- high | low | temp
   scope TEXT NOT NULL DEFAULT 'global',         -- global | project
@@ -35,6 +36,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memos_fts USING fts5(body, title, tokenize='t
 CREATE TABLE IF NOT EXISTS topics(
   id INTEGER PRIMARY KEY, space_id INTEGER NOT NULL, title TEXT NOT NULL,
   summary TEXT NOT NULL DEFAULT '', project_key TEXT, origin_topic_id INTEGER,
+  kind TEXT NOT NULL DEFAULT 'knowledge',       -- knowledge | procedure: 지식 문서와 절차 문서는 섞지 않는다
   dirty INTEGER NOT NULL DEFAULT 1, pipeline_version TEXT,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS memo_topics(memo_id INTEGER NOT NULL, topic_id INTEGER NOT NULL, PRIMARY KEY(memo_id, topic_id));

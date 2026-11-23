@@ -116,7 +116,7 @@ function paintPersonal(root, d) {
 
 }
 
-const ACTION_LABEL = { remember: '저장', forget: '삭제', confirm: '후보 확인', dismiss: '후보 버림', promote: '팀으로 공유', kind_change: '종류 변경', auto_promoted: '자주 쓰여 정식 메모로 올림' };
+const ACTION_LABEL = { remember: '저장', forget: '삭제', confirm: '후보 확인', dismiss: '후보 버림', promote: '팀으로 공유', kind_change: '종류 변경', when_change: '언제 쓰는지 변경', auto_promoted: '자주 쓰여 정식 메모로 올림' };
 function eventRow(ev) {
   const m = ev.memo;
   if (!m) return '';
@@ -141,7 +141,7 @@ function eventRow(ev) {
       ${undone ? html`<span class="chip">되돌림</span>` : ev.undoable ? html`<button type="button" class="btn btn--quiet btn--sm log__undo" data-undo="${ev.id}">${icon('undo', 'icon--sm')}<span>되돌리기</span></button>` : ''}
     </div>
     <p class="log__body">${clip(m.body, 120)}</p>
-    <p class="log__dest">${ev.action === 'remember' || ev.action === 'promote' ? dest : ev.action === 'kind_change' ? kindDest(ev, m, undone) : ''}${ev.masked ? html` · 민감 정보 ${ev.masked}건 마스킹` : ''}</p>
+    <p class="log__dest">${ev.action === 'remember' || ev.action === 'promote' ? dest : ev.action === 'kind_change' ? kindDest(ev, m, undone) : ev.action === 'when_change' ? `${ev.prev_when || '없음'} → ${ev.when}` : ''}${ev.masked ? html` · 민감 정보 ${ev.masked}건 마스킹` : ''}</p>
     ${replaced}
   </li>`;
 }

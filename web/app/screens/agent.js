@@ -12,6 +12,8 @@ const FIELDS = [
   { key: 'instructions', name: '지시·선호', cls: 'f-mine' },
   { key: 'team_instructions', name: '팀 규칙', cls: 'f-team' },
   { key: 'state', name: '진행 상태', cls: 'f-state' },
+  { key: 'procedures', name: '내 절차 색인', cls: 'f-mine-proc' },
+  { key: 'team_procedures', name: '팀 절차 색인', cls: 'f-team-proc' },
   { key: 'topics', name: '내 지식 색인', cls: 'f-mine-idx' },
   { key: 'team_topics', name: '팀 지식 색인', cls: 'f-team-idx' },
 ];

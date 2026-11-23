@@ -29,14 +29,24 @@ async function wikiScreen(root, ctx) {
   let cur = { key: null, topic: null };
   let memoCtrl = null;
 
+  function navItem(t, proc = false) {
+    const only = t.unconfirmed && t.unconfirmed === t.memos;
+    return html`<li><a class="wnav__item${only ? ' is-unconfirmed' : ''}${proc ? ' is-proc' : ''}" href="#/wiki/${t.id}" data-key="${t.id}">
+      <span class="wnav__title">${t.title}${proc && t.project ? html` <span class="muted mono small">${t.project}</span>` : ''}</span>
+      <span class="wnav__meta">${only ? html`<span class="mini-cand" title="세션 자동 추출 후보만 있는 주제">미확인 후보만</span>` : html`<span class="num">${t.memos}</span>건`}</span></a></li>`;
+  }
+
   async function loadList() {
     list = await api('/api/topics', { query: spaceQuery(), signal: ctx.signal });
     paintList();
   }
   function paintList() {
     const groups = new Map();
+    const procs = [];
     for (const t of list.topics) {
       if (filter && !t.title.toLowerCase().includes(filter.toLowerCase())) continue;
+      // 절차 문서는 저장소와 상관없이 맨 위에 모은다. 에이전트가 따라 하는 문서라 지식 문서와 섞지 않는다.
+      if (t.kind === 'procedure') { procs.push(t); continue; }
       const k = t.project || '';
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k).push(t);
@@ -55,13 +65,11 @@ async function wikiScreen(root, ctx) {
               <div class="sugg__acts"><button type="button" class="btn btn--sm" data-merge="${s.keep.id}:${s.drop.id}">합치기</button><button type="button" class="btn btn--quiet btn--sm" data-hide="${suggKey(s)}">그대로 두기</button></div></div>`
           : html`<div class="sugg"><p><a href="#/wiki/${s.topic.id}">${s.topic.title}</a>에 메모가 ${s.topic.n}건 쌓였습니다. 주제를 나누면 에이전트가 찾기 쉬워집니다.</p>
               <div class="sugg__acts"><button type="button" class="btn btn--quiet btn--sm" data-hide="${suggKey(s)}">알겠습니다</button></div></div>`)}</div>` : ''}
+      ${procs.length ? html`<div class="wnav__grp"><p class="wnav__group">절차 <span class="muted">(그 작업을 할 때 꺼냄)</span></p>
+        <ul>${procs.map((t) => navItem(t, true))}</ul></div>` : ''}
       ${keys.length ? keys.map((k) => html`<div class="wnav__grp"><p class="wnav__group">${k ? html`<span class="mono">${k}</span>` : '전체 범위'}</p>
-        <ul>${groups.get(k).map((t) => {
-          const only = t.unconfirmed && t.unconfirmed === t.memos;
-          return html`<li><a class="wnav__item${only ? ' is-unconfirmed' : ''}" href="#/wiki/${t.id}" data-key="${t.id}">
-            <span class="wnav__title">${t.title}</span>
-            <span class="wnav__meta">${only ? html`<span class="mini-cand" title="세션 자동 추출 후보만 있는 주제">미확인 후보만</span>` : html`<span class="num">${t.memos}</span>건`}</span></a></li>`;
-        })}</ul></div>`)
+        <ul>${groups.get(k).map((t) => navItem(t))}</ul></div>`)
+        : procs.length ? ''
         : list.topics.length ? html`<p class="quiet-line">"${filter}"와 맞는 주제가 없습니다.</p>`
         : emptyState({ icon: 'wiki', title: '아직 주제 문서가 없습니다', body: '메모를 저장하면 비슷한 메모끼리 주제 문서로 묶이고, 문서는 메모를 근거로 다시 쓰입니다.' })}
       ${list.entities?.length ? html`<div class="wnav__grp"><p class="wnav__group">개체</p><p class="ents">${list.entities.slice(0, 24).map((e) => html`<a class="chip ent" href="#/wiki/entity/${e.id}" title="${ENTITY_KIND[e.kind] || e.kind} · 메모 ${e.n}건">${e.name}</a>`)}</p></div>` : ''}`);
@@ -169,7 +177,7 @@ async function wikiScreen(root, ctx) {
             <input class="input doc__rename-input" id="rename-input" maxlength="60" value="${t.title}">
             <button type="submit" class="btn btn--primary btn--sm">저장</button><button type="button" class="btn btn--sm" id="rename-cancel">취소</button></form>`
           : html`<h1 class="doc__title" id="doc-title">${t.title}</h1>`}
-        <p class="doc__meta">${projectChip(t.project)}<span>${personal ? '내 공간' : t.space_name}</span><span>유효 메모 <span class="num">${active.length}</span>건</span>
+        <p class="doc__meta">${t.kind === 'procedure' ? html`<span class="chip chip--proc">절차 문서</span>` : ''}${projectChip(t.project)}<span>${personal ? '내 공간' : t.space_name}</span><span>유효 메모 <span class="num">${active.length}</span>건</span>
           <span>에이전트 참조 <span class="num">${fmtNum(d.refs)}</span>회</span><span>${timeAgo(t.updated_at)} 갱신</span></p>
         <div class="doc__acts">
           <button type="button" class="btn btn--sm" data-act="regen">${icon('refresh', 'icon--sm')}<span>다시 생성</span></button>

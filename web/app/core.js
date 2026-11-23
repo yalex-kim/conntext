@@ -358,7 +358,7 @@ export function cmpVersion(a, b) {
 
 // ── 이름표 ──────────────────────────────────────────────────────────
 export const TIER_LABEL = { mine: '내 메모', team: '팀 지식', candidate: '세션 자동 추출 · 미확인', state: '진행 상태', superseded: '대체됨' };
-export const KIND_LABEL = { instruction: '지시·선호', knowledge: '지식', state: '진행 상태' };
+export const KIND_LABEL = { instruction: '지시·선호', knowledge: '지식', procedure: '절차', state: '진행 상태' };
 export const SOURCE_LABEL = { manual: '직접 적음', session: '세션에서 추출', import: '가져옴', promoted: '팀으로 공유', web: '웹' };
 export const STATUS_LABEL = { active: '유효', superseded: '대체됨', duplicate: '중복으로 합쳐짐', deleted: '삭제됨', dismissed: '버림', expired: '만료됨' };
 export const PLATFORM_LABEL = { 'claude-code': 'Claude Code', opencode: 'OpenCode', connpass: 'connpass' };

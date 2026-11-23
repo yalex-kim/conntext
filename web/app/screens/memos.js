@@ -18,7 +18,7 @@ async function memosScreen(root, ctx) {
     <form class="filters" id="mf" role="search" aria-label="메모 거르기">
       <div class="filters__q"><label class="sr-only" for="mf-q">검색어</label>${icon('search', 'icon--sm')}<input class="input input--sm" id="mf-q" name="q" placeholder="본문에서 찾기"></div>
       <label class="sr-only" for="mf-kind">종류</label>
-      <select class="select select--sm" id="mf-kind" name="kind"><option value="">종류: 전체</option><option value="knowledge">지식</option><option value="instruction">지시·선호</option><option value="state">진행 상태</option></select>
+      <select class="select select--sm" id="mf-kind" name="kind"><option value="">종류: 전체</option><option value="knowledge">지식</option><option value="instruction">지시·선호</option><option value="procedure">절차</option><option value="state">진행 상태</option></select>
       <label class="sr-only" for="mf-source">출처</label>
       <select class="select select--sm" id="mf-source" name="source"><option value="">출처: 전체</option><option value="manual">직접 적음·가져옴</option><option value="session">세션에서 추출</option></select>
       <label class="sr-only" for="mf-project">범위</label>
