@@ -166,6 +166,19 @@ def split_new(text, anchor):
     return "", text
 
 
+HANDOFF_ITEMS = 8
+
+
+def merge_handoff(prev, new):
+    """규칙 경로의 체크포인트는 새 부분만 보므로, 이전 진행 상태와 합쳐 세션 전체를 남긴다(리뷰 PR #23).
+    남은 일은 이전 것 가운데 새로 끝낸 일과 같은 것만 빼고 이어 붙인다. 목록은 최근 것 위주로 줄인다."""
+    done = list(dict.fromkeys((prev.get("done") or []) + (new.get("done") or [])))
+    finished = set(new.get("done") or [])
+    remaining = list(dict.fromkeys([r for r in prev.get("remaining") or [] if r not in finished] + (new.get("remaining") or [])))
+    notes = " ".join(x for x in (prev.get("notes") or "", new.get("notes") or "") if x).strip()
+    return {"done": done[-HANDOFF_ITEMS:], "remaining": remaining[-HANDOFF_ITEMS:], "notes": notes[-600:]}
+
+
 def heuristic_extract(text):
     users = [l[5:].strip() for l in text.splitlines() if l.startswith("사용자: ")]
     agents = re.findall(r"에이전트: ([\s\S]*?)(?=\n사용자: |\n에이전트: |\n\[도구\]|\Z)", text)
@@ -257,6 +270,8 @@ def extract(session_id, checkpoint=False):
         out = heuristic_extract(delta)
         if earlier and s["summary"]:
             out["summary"] = s["summary"]      # 규칙 경로는 새 부분만 보므로, 세션 요약은 처음 것을 둔다.
+        if earlier and prev_h:
+            out["handoff"] = merge_handoff(prev_h, out.get("handoff") or {})
     h = out.get("handoff") or {}
     has_h = bool(h.get("remaining") or h.get("done") or h.get("notes"))
     created = []

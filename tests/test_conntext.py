@@ -953,6 +953,18 @@ class TestCheckpointExtract(Base):
         self.assertEqual(s["status"], "extracted")
         self.assertEqual(db.val("SELECT result FROM trace WHERE session_id=? AND stage='session_extract' ORDER BY id DESC LIMIT 1", s["id"]), "skip:no-new-lines")
 
+    def test_rule_path_keeps_earlier_remaining_work(self):
+        # 규칙 경로의 다음 체크포인트가 새 부분만 보더라도, 앞에서 남은 일이 /resume에서 사라지지 않는다
+        self.up(self.A)
+        jobs.drain()
+        self.up(self.A + self.B)
+        jobs.drain()
+        body = retrieval.resume(self.alice, GW)["state"]["body"]
+        self.assertIn("broker ACL 캐시 TTL 확인", body)
+        self.assertIn("스테이징 배포", body)
+        m = sessions.merge_handoff({"done": ["a"], "remaining": ["b", "c"], "notes": "n1"}, {"done": ["b"], "remaining": ["d"], "notes": ""})
+        self.assertEqual(m, {"done": ["a", "b"], "remaining": ["c", "d"], "notes": "n1"})
+
     def test_checkpoint_off_by_policy(self):
         db.set_policy("capture", {**db.DEFAULT_POLICIES["capture"], "checkpoint_turns": 0})
         self.up(self.A)
