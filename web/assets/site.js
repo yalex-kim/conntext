@@ -173,3 +173,30 @@ if (document.body.classList.contains("landing")) {
   document.querySelector("[data-intro]")?.addEventListener("click", () => { if (reduce) return; scrollTo({ top: 0 }); showIntro() })
   if (reduce) document.querySelector("[data-intro]")?.setAttribute("hidden", "")
 }
+
+// 소개 영상: 누르기 전에는 받지 않는다(preload="none"). 스크립트가 있으면 포스터 위의 재생 단추를 쓰고,
+// 없으면 브라우저 기본 컨트롤로 본다. 장면 버튼은 그 시각으로 옮겨 재생한다.
+const film = document.getElementById("film-video")
+if (film) {
+  const play = document.querySelector(".film__play")
+  const chapters = [...document.querySelectorAll("[data-seek]")]
+  film.controls = false
+  play.hidden = false
+  const start = (t) => {
+    play.hidden = true
+    film.controls = true
+    if (t != null) {
+      if (film.readyState >= 1) film.currentTime = t
+      else film.addEventListener("loadedmetadata", () => { film.currentTime = t }, { once: true })
+    }
+    film.play().catch(() => {})
+  }
+  play.addEventListener("click", () => { start(); film.focus() })
+  for (const b of chapters) b.addEventListener("click", () => start(Number(b.dataset.seek)))
+  // 지금 보고 있는 장면을 표시한다
+  film.addEventListener("timeupdate", () => {
+    let cur = null
+    for (const b of chapters) if (film.currentTime >= Number(b.dataset.seek) - 0.2) cur = b
+    for (const b of chapters) b.setAttribute("aria-current", b === cur ? "true" : "false")
+  })
+}

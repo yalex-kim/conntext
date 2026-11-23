@@ -1,0 +1,25 @@
+{
+  "name": "conntext-video",
+  "private": true,
+  "description": "Conntext 소개 영상 (Remotion)",
+  "scripts": {
+    "studio": "remotion studio",
+    "check": "tsc --noEmit",
+    "render": "remotion render Promo out/promo-voice.mp4",
+    "loudnorm": "ffmpeg -y -i out/promo-voice.mp4 -c:v copy -af loudnorm=I=-16:TP=-1.5:LRA=11 -c:a aac -b:a 192k out/conntext-promo.mp4",
+    "web": "ffmpeg -y -i out/conntext-promo.mp4 -c:v libx264 -preset slow -crf 26 -tune animation -pix_fmt yuv420p -c:a aac -b:a 96k -movflags +faststart ../web/assets/video/conntext-promo.mp4",
+    "poster": "remotion still Poster out/poster.png && ffmpeg -y -i out/poster.png -vf scale=1280:-2 -q:v 4 ../web/assets/video/conntext-promo-poster.jpg",
+    "narrate": "python3 scripts/narrate.py"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.537",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.537",
+    "roughjs": "4.6.6"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  }
+}

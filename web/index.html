@@ -49,6 +49,29 @@
     </div>
   </section>
 
+  <section class="film on-ink" aria-labelledby="s-film">
+    <div class="film__inner">
+      <div class="film__text">
+        <h2 id="s-film">2분이면 전체 그림이 보입니다</h2>
+        <p>손그림 여섯 장면으로 적기부터 지키기까지 따라갑니다. 나레이션과 자막이 있습니다.</p>
+        <ol class="film__chapters" aria-label="장면 바로 가기">
+          <li><button type="button" data-seek="17.4"><span class="film__t">0:17</span><span><b>적기</b> /remember 한 줄, 네 칸 서랍</span></button></li>
+          <li><button type="button" data-seek="36"><span class="film__t">0:36</span><span><b>꺼내 쓰기</b> 세션 시작 가방, 절차 카드</span></button></li>
+          <li><button type="button" data-seek="62.5"><span class="film__t">1:02</span><span><b>이어받기</b> 10턴마다 정리, /resume</span></button></li>
+          <li><button type="button" data-seek="71.5"><span class="film__t">1:11</span><span><b>믿고 쓰기</b> 미확인 후보는 연필 메모</span></button></li>
+          <li><button type="button" data-seek="81.2"><span class="film__t">1:21</span><span><b>함께 쓰기</b> 위키 근거, 팀 게시판</span></button></li>
+          <li><button type="button" data-seek="92.2"><span class="film__t">1:32</span><span><b>지키기</b> 저장 전 가림, 운영은 계기판만</span></button></li>
+        </ol>
+      </div>
+      <figure class="film__frame">
+        <video id="film-video" controls preload="none" playsinline width="1920" height="1080" poster="/assets/video/conntext-promo-poster.jpg" aria-label="Conntext 소개 영상, 1분 50초, 나레이션과 자막 포함">
+          <source src="/assets/video/conntext-promo.mp4" type="video/mp4">
+        </video>
+        <button class="film__play" type="button" hidden><svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#play"/></svg><span>소개 영상 보기</span><span class="film__len">1:50</span></button>
+      </figure>
+    </div>
+  </section>
+
   <div class="chart" aria-label="Conntext가 하는 일: 메시지 시퀀스 차트">
     <div class="lifelines" aria-hidden="true"><span style="--i:1"></span><span style="--i:2"></span><span style="--i:3"></span><span style="--i:4"></span></div>
 

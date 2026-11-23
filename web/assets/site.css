@@ -86,6 +86,52 @@ html.intro-open .topbar__mark { visibility: hidden; }
 .hero__note code { background: oklch(0.22 0.04 262 / 0.09); }
 .hero__btns { display: flex; flex-wrap: wrap; gap: var(--s-3); }
 
+/* ---------- 소개 영상: 잉크 띠 위의 화면 ----------
+   아래 여백은 차트의 참여자 상자가 경계에 걸치도록 남긴다(첫 화면과 같은 방식). */
+.film { position: relative; }
+.film ::selection { background: var(--marker); color: var(--ink); }
+.film__inner {
+  max-width: 1360px; margin: 0 auto;
+  padding: var(--s-9) var(--pad) calc(var(--part-h) / 2 + var(--s-8));
+  display: grid; grid-template-columns: var(--prose) 1fr; align-items: start;
+}
+.film__text { padding-right: var(--s-7); }
+.film__text h2 { font-size: var(--fs-8); line-height: 1.15; letter-spacing: -0.025em; margin-bottom: var(--s-4); text-wrap: balance; }
+.film__text > p { font-size: var(--fs-5); line-height: 1.6; color: var(--on-ink-2); max-width: 34ch; }
+.film__chapters { margin-top: var(--s-6); display: grid; gap: 2px; border-top: 1px solid var(--ink-line); }
+.film__chapters li { border-bottom: 1px solid var(--ink-line); }
+.film__chapters button {
+  width: 100%; display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: var(--s-3);
+  padding: 10px 6px; background: none; border: 0; color: var(--on-ink-2); font: inherit; font-size: var(--fs-3); text-align: left; cursor: pointer;
+  border-radius: var(--r-1); transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1), color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.film__chapters button:hover { background: oklch(1 0 0 / 0.06); color: var(--on-ink); }
+.film__chapters button b { color: var(--on-ink); font-weight: 700; margin-right: 6px; }
+.film__chapters button[aria-current="true"] { color: var(--on-ink); }
+.film__chapters button[aria-current="true"] .film__t { background: var(--on-ink); }
+.film__t {
+  justify-self: start; height: 24px; padding: 0 12px 0 8px; display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; background: var(--marker); color: var(--ink);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 50%, 100% 100%, 0 100%); border-radius: 3px 0 0 3px;
+}
+.film__frame { position: relative; margin: 0; aspect-ratio: 16 / 9; border-radius: var(--r-3); overflow: hidden; background: #F3ECDB;
+  box-shadow: 0 30px 60px -28px oklch(0 0 0 / 0.7), 0 2px 6px -2px oklch(0 0 0 / 0.4); }
+.film__frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.film__play {
+  position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 12px; height: 60px; padding: 0 44px 0 24px; white-space: nowrap;
+  background: var(--marker); color: var(--ink); border: 0; cursor: pointer;
+  font-family: var(--font-display); font-weight: 700; font-size: 20px; letter-spacing: -0.01em;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 18px) 50%, 100% 100%, 0 100%); border-radius: 6px 0 0 6px;
+  box-shadow: 0 10px 24px -10px oklch(0.22 0.04 262 / 0.6);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), background-color 160ms;
+}
+.film__play .icon { width: 22px; height: 22px; fill: currentColor; }
+.film__play:hover { transform: translateX(-50%) translateY(-2px); background: var(--marker-deep); }
+.film__play:focus-visible { outline: 3px solid var(--on-ink); outline-offset: 4px; }
+.film__len { font-family: var(--font-mono); font-size: 14px; font-weight: 400; opacity: 0.75; }
+.film + .chart { margin-top: calc(var(--part-h) / -2); }
+
 /* ---------- 차트 틀 ---------- */
 .chart {
   position: relative; max-width: 1360px; margin: 0 auto;
@@ -298,6 +344,15 @@ html.intro-open .topbar__mark { visibility: hidden; }
 
 /* ---------- 좁은 화면: 생명선 넷을 왼쪽 레일로 모은다 ----------
    레일 폭 --rail, 생명선 i의 x = (i - 0.5) * --lane. 메시지는 레일 안의 짧은 화살표 + 오른쪽 글. */
+@media (max-width: 860px) {
+  .film__inner { display: block; padding: var(--s-7) var(--pad) var(--s-7); }
+  .film__text { padding: 0; margin-bottom: var(--s-5); }
+  .film__text > p { font-size: var(--fs-4); }
+  .film__chapters { margin-top: var(--s-5); }
+  .film__play { height: 44px; font-size: 16px; gap: 8px; padding: 0 30px 0 14px; bottom: 9%; }
+  .film__play .icon { width: 18px; height: 18px; }
+  .film + .chart { margin-top: 0; }
+}
 @media (max-width: 860px) {
   .landing { --lane: 21px; --rail: calc(var(--lane) * 4); --gap: 14px; --pad: 16px; }
   .topbar { height: 52px; }
