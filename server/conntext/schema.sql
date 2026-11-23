@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS memo_uses(
   id INTEGER PRIMARY KEY, memo_id INTEGER NOT NULL, user_id INTEGER NOT NULL, kind TEXT NOT NULL, -- inject | recall | used
   session_ext_id TEXT, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS memo_uses_memo ON memo_uses(memo_id, kind);
+-- 질문마다 '이 세션에서 이미 넣은 메모'를 찾는 조회(#12)가 질문 처리 경로에 있다.
+CREATE INDEX IF NOT EXISTS idx_memo_uses_session ON memo_uses(user_id, session_ext_id, kind);
 CREATE TABLE IF NOT EXISTS audit_log(
   id INTEGER PRIMARY KEY, actor_id INTEGER, action TEXT NOT NULL, target_type TEXT, target_id TEXT,
   space_id INTEGER, detail TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL);

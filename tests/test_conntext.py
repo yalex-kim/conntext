@@ -1043,15 +1043,20 @@ class TestPromptRecall(Base):
         retrieval.mark_used(self.alice, [self.bond], None)
         retrieval.mark_used(self.alice, [self.bond], "other")
         self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 1)
+        # 넣은 뒤 같은 메모를 recall로 다시 찾고 쓴 것은 어느 쪽 덕인지 알 수 없어 세지 않는다
+        db.insert("memo_uses", memo_id=self.bond, user_id=self.alice["id"], kind="recall", session_ext_id="s2", created_at=db.now())
         retrieval.mark_used(self.alice, [self.bond], "s2")
+        self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 1)
+        self.assertEqual(self.ctx("공장 초기화 재페어링 본딩", "s9")["memo_ids"], [self.bond])
+        retrieval.mark_used(self.alice, [self.bond], "s9")
         self.assertEqual(admin.overview()["quality"]["prompt_used_7d"], 2)
         # 기록은 30일 뒤 지운다
         db.ex("UPDATE prompt_injections SET created_at=? WHERE id=1", db.now() - 31 * 86400)
         sessions.maintenance()
-        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 3)
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 4)
         # 미리 보기는 기록을 남기지 않는다
         self.ctx("본딩 정보 어디 저장돼?", "s3", log=False)
-        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 3)
+        self.assertEqual(db.val("SELECT COUNT(*) FROM prompt_injections"), 4)
 
     def test_switches(self):
         db.update("users", self.alice["id"], prompt_recall_off=1)

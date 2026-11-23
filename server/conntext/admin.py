@@ -74,11 +74,13 @@ def overview(days=14):
     pr = db.one("SELECT COUNT(*) AS calls, SUM(memo_ids!='[]') AS hit, AVG(CASE WHEN memo_ids!='[]' THEN tokens END) AS tok "
                 "FROM prompt_injections WHERE created_at>=?", d7)
     pr_memos = db.val("SELECT COUNT(*) FROM (SELECT DISTINCT memo_id, session_ext_id FROM memo_uses WHERE kind='prompt' AND created_at>=?)", d7, default=0)
-    # 쓰임 판정: 같은 사용자, 같은 세션에서 넣은 뒤 답에 썼다고 알린 것만 센다. 다른 세션의 쓰임이나 /recall로 찾은 뒤의 쓰임은
-    # 이 주입 덕이라고 볼 수 없다. OpenCode도 MCP 프록시가 지금 세션 id를 붙여 보내므로 세션으로 이어진다(리뷰 PR #24).
+    # 쓰임 판정: 같은 사용자, 같은 세션에서 넣은 뒤 답에 썼다고 알린 것만 센다. 그 사이 같은 메모를 recall로 다시 찾았으면
+    # 어느 쪽 덕인지 알 수 없으므로 세지 않는다. 다른 세션의 쓰임도 세지 않는다(리뷰 PR #24).
     pr_used = db.val("SELECT COUNT(*) FROM (SELECT DISTINCT p.memo_id, p.session_ext_id FROM memo_uses p JOIN memo_uses u "
                      "ON u.memo_id=p.memo_id AND u.user_id=p.user_id AND u.session_ext_id=p.session_ext_id AND u.kind='used' AND u.created_at>=p.created_at "
-                     "WHERE p.kind='prompt' AND p.session_ext_id IS NOT NULL AND p.session_ext_id!='' AND p.created_at>=?)", d7, default=0)
+                     "WHERE p.kind='prompt' AND p.session_ext_id IS NOT NULL AND p.session_ext_id!='' AND p.created_at>=? "
+                     "AND NOT EXISTS (SELECT 1 FROM memo_uses r WHERE r.memo_id=p.memo_id AND r.user_id=p.user_id AND r.session_ext_id=p.session_ext_id "
+                     "AND r.kind='recall' AND r.created_at>=p.created_at AND r.created_at<=u.created_at))", d7, default=0)
     used = db.val("SELECT COUNT(DISTINCT memo_id) FROM memo_uses WHERE kind='used' AND created_at>=?", d7, default=0)
     by_rule = db.val("SELECT COUNT(*) FROM trace WHERE stage='analyze' AND result LIKE 'rule:%' AND created_at>=?", d7, default=0)
     by_llm = db.val("SELECT COUNT(*) FROM trace WHERE stage='analyze' AND result LIKE 'llm:%' AND created_at>=?", d7, default=0)
