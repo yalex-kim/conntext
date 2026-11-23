@@ -144,7 +144,8 @@ def login(req):
 def me(req):
     u = req.user
     return {
-        "user": {k: u[k] for k in ("id", "email", "name", "role", "capture_paused")},
+        "user": {k: u[k] for k in ("id", "email", "name", "role", "capture_paused", "prompt_recall_off")},
+        "prompt_recall_enabled": bool(db.policy("prompt_recall").get("enabled")),
         "spaces": access.user_spaces(u["id"]),
         "notifications": db.q("SELECT id, body, created_at FROM notifications WHERE user_id=? AND read_at IS NULL ORDER BY id DESC", u["id"]),
         "llm": {"provider": llm.provider(), "model": llm.model_name()},
@@ -158,6 +159,8 @@ def me_update(req):
     if "capture_paused" in req.body:
         db.update("users", req.user["id"], capture_paused=1 if req.body["capture_paused"] else 0)
         db.audit(req.user["id"], "capture_pause", "user", req.user["id"], paused=bool(req.body["capture_paused"]))
+    if "prompt_recall_off" in req.body:
+        db.update("users", req.user["id"], prompt_recall_off=1 if req.body["prompt_recall_off"] else 0)
     return {"ok": True}
 
 
@@ -491,6 +494,15 @@ def agent_preview(req):
     return ctx
 
 
+@route("POST", "/api/agent/prompt-preview")
+def agent_prompt_preview(req):
+    """질문 하나를 넣어 보면 그 질문에 어떤 메모가 들어갈지 미리 본다. 기록은 남기지 않는다."""
+    pk = mcp.normalize_project(req.body.get("project")) if req.body.get("project") else None
+    res = retrieval.prompt_context(req.user, req.body.get("prompt", ""), pk, log=False)
+    res["policy"] = db.policy("prompt_recall")
+    return res
+
+
 @route("GET", "/api/agent/injections")
 def agent_injections(req):
     rows = db.q("SELECT id, platform, session_ext_id, project_key, memo_ids, topic_ids, tokens, ms, created_at FROM injections WHERE user_id=? ORDER BY id DESC LIMIT 30", req.user["id"])
@@ -593,6 +605,15 @@ def hook_start(req):
     minv = db.policy("clients").get("min_plugin_version")
     return {"context": text, "tokens": ctx["tokens"], "project": pk, "min_plugin_version": minv,
             "paused": bool(req.user["capture_paused"]), "checkpoint_turns": sessions.checkpoint_turns()}
+
+
+@route("POST", "/api/hooks/prompt")
+def hook_prompt(req):
+    """질문마다 관련 메모(#12). 질문 원문은 검색에만 쓰고 저장하지 않는다."""
+    b = req.body
+    res = retrieval.prompt_context(req.user, b.get("prompt", ""), mcp.normalize_project(b.get("project")),
+                                   str(b.get("session_id") or "") or None, b.get("platform") or "claude-code")
+    return {"context": res["text"], "memo_ids": res["memo_ids"], "tokens": res["tokens"]}
 
 
 @route("POST", "/api/hooks/session-upload")

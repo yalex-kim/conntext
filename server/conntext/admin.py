@@ -70,6 +70,13 @@ def overview(days=14):
     inj_used = db.val("SELECT COUNT(DISTINCT memo_id) FROM memo_uses WHERE kind='used' AND created_at>=? AND memo_id IN "
                       "(SELECT memo_id FROM memo_uses WHERE kind='inject' AND created_at>=?)", d7, d7, default=0)
     recalled = db.val("SELECT COUNT(DISTINCT memo_id) FROM memo_uses WHERE kind='recall' AND created_at>=?", d7, default=0)
+    # 질문마다 넣은 메모(#12): 호출 수, 실제로 넣은 호출, 넣은 메모(세션·메모 쌍), 그중 같은 세션에서 답에 쓰였다고 알린 것
+    pr = db.one("SELECT COUNT(*) AS calls, SUM(memo_ids!='[]') AS hit, AVG(CASE WHEN memo_ids!='[]' THEN tokens END) AS tok "
+                "FROM prompt_injections WHERE created_at>=?", d7)
+    pr_memos = db.val("SELECT COUNT(*) FROM (SELECT DISTINCT memo_id, session_ext_id FROM memo_uses WHERE kind='prompt' AND created_at>=?)", d7, default=0)
+    pr_used = db.val("SELECT COUNT(*) FROM (SELECT DISTINCT p.memo_id, p.session_ext_id FROM memo_uses p JOIN memo_uses u "
+                     "ON u.memo_id=p.memo_id AND u.session_ext_id=p.session_ext_id AND u.kind='used' AND u.created_at>=p.created_at "
+                     "WHERE p.kind='prompt' AND p.created_at>=?)", d7, default=0)
     used = db.val("SELECT COUNT(DISTINCT memo_id) FROM memo_uses WHERE kind='used' AND created_at>=?", d7, default=0)
     by_rule = db.val("SELECT COUNT(*) FROM trace WHERE stage='analyze' AND result LIKE 'rule:%' AND created_at>=?", d7, default=0)
     by_llm = db.val("SELECT COUNT(*) FROM trace WHERE stage='analyze' AND result LIKE 'llm:%' AND created_at>=?", d7, default=0)
@@ -78,6 +85,8 @@ def overview(days=14):
         "manual_7d": manual["n"] or 0, "manual_deleted_7d": manual["deleted"] or 0, "manual_superseded_7d": manual["superseded"] or 0,
         "candidates": {k: cand[k] or 0 for k in ("n", "promoted", "expired", "dismissed", "pending")},
         "searches_7d": srch["n"] or 0, "zero_result_7d": srch["zero"] or 0,
+        "prompt_calls_7d": pr["calls"] or 0, "prompt_hit_7d": pr["hit"] or 0, "prompt_avg_tokens": round(pr["tok"] or 0),
+        "prompt_memos_7d": pr_memos, "prompt_used_7d": pr_used,
         "injected_memos_7d": injected, "injected_used_7d": inj_used, "recalled_memos_7d": recalled, "used_memos_7d": used,
         "analyze_by_rule_7d": by_rule, "analyze_by_llm_7d": by_llm,
         "masked_24h": (db.val("SELECT SUM(masked_count) FROM memos WHERE created_at>=?", d1, default=0)
@@ -243,6 +252,7 @@ def delete_personal_data(user_id):
         db.ex("DELETE FROM session_lines WHERE session_id=?", r["id"])
     db.ex("DELETE FROM sessions WHERE user_id=?", user_id)
     db.ex("DELETE FROM injections WHERE user_id=?", user_id)
+    db.ex("DELETE FROM prompt_injections WHERE user_id=?", user_id)
     db.ex("DELETE FROM notifications WHERE user_id=?", user_id)
     return n
 

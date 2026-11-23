@@ -287,6 +287,34 @@ class TestCheckpoint(ClientBase):
         self.assertIsNone(self.session("c2")["transcript"])
 
 
+class TestPromptHook(ClientBase):
+    """UserPromptSubmit 훅(#12)."""
+    def setUp(self):
+        super().setUp()
+        self.setup_client()
+        pipeline.remember(self.user, "본딩 정보는 /data/bt/bond.db에 저장된다. 공장 초기화 때 지우지 않으면 재페어링이 실패한다", project_key=GW)
+
+    def test_prints_related_memo_as_additional_context(self):
+        r = self.hook("prompt", {"session_id": "q1", "cwd": str(self.repo), "prompt": "본딩 정보 어디 저장돼?"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+        self.assertEqual(out["hookEventName"], "UserPromptSubmit")
+        self.assertIn("bond.db", out["additionalContext"])
+        # 관련 메모가 없거나 슬래시 명령이면 아무것도 출력하지 않는다
+        for p in ("테스트 돌려 줘", "/conntext:recall 본딩 정보"):
+            r = self.hook("prompt", {"session_id": "q1", "cwd": str(self.repo), "prompt": p})
+            self.assertEqual((r.returncode, r.stdout), (0, ""), p)
+
+    def test_server_down_is_quick_and_quiet(self):
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            dead = f"http://127.0.0.1:{s.getsockname()[1]}"
+        t0 = time.time()
+        r = self.hook("prompt", {"session_id": "q2", "cwd": str(self.repo), "prompt": "본딩 정보 어디 저장돼?"}, env={"CONNTEXT_URL": dead})
+        self.assertEqual((r.returncode, r.stdout, r.stderr), (0, "", ""))
+        self.assertLess(time.time() - t0, 5)
+
+
 class TestOptOut(ClientBase):
     def setUp(self):
         super().setUp()

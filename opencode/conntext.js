@@ -48,6 +48,7 @@ const marker = (id) => join(PENDING, id.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0
 
 export const Conntext = async ({ client, directory }) => {
   const contexts = new Map()   // sessionID → Promise<string>
+  const related = new Map()    // sessionID → Promise<string>: 마지막 질문에 관련된 메모(#12). 같은 질문의 여러 단계에 다시 쓴다
   const children = new Set()   // 하위 에이전트 세션은 기록하지 않는다
 
   const context = (sessionID) => {
@@ -90,6 +91,18 @@ export const Conntext = async ({ client, directory }) => {
       if (!input.sessionID || children.has(input.sessionID)) return
       const text = await context(input.sessionID)
       if (text) output.system.push(text)
+      const extra = await (related.get(input.sessionID) || Promise.resolve(""))
+      if (extra) output.system.push(extra)
+    },
+    "chat.message": async (input, output) => {
+      try {
+        if (!input.sessionID || children.has(input.sessionID)) return
+        const prompt = (output.parts || []).filter((p) => p.type === "text" && !p.synthetic).map((p) => p.text).join("\n").trim()
+        if (!prompt) return
+        related.set(input.sessionID, run(["hook", "prompt"], JSON.stringify({ session_id: input.sessionID, cwd: directory, prompt }), 4000).then((out) => {
+          try { return JSON.parse(out).hookSpecificOutput.additionalContext || "" } catch { return "" }
+        }))
+      } catch {}
     },
     event: async ({ event }) => {
       try {

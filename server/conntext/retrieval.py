@@ -77,7 +77,7 @@ def search(space_ids, query, project_key=None, limit=8, statuses=("active",), ex
             score *= 1.15 if (project_key and m["project_key"] == project_key) else (0.55 if project_key else 0.9)
         if score >= min_score:
             m.pop("embedding", None)
-            m.update(score=round(score, 4), cos=round(cos, 4), tier=tier)
+            m.update(score=round(score, 4), cos=round(cos, 4), kw=round(kw, 4), tier=tier)
             out.append(m)
     out.sort(key=lambda r: -r["score"])
     return out[:limit]
@@ -94,12 +94,8 @@ def _memo_view(m):
     }
 
 
-def recall(user, query, project_key=None, session_ext_id=None, limit=6, log=True):
-    """log=False면 사용 기록(memo_uses)과 검색 지표를 남기지 않는다. 사람이 웹에서 타이핑하며 보는 검색용이다."""
-    t0 = time.time()
-    sids = access.space_ids(user["id"])
-    hits = search(sids, query, project_key, limit=limit + 4)
-    # 내가 팀에 올린 사본이 원본(또는 원본의 지금 판)과 함께 나오면 내 것만 남긴다.
+def drop_shadowed(hits):
+    """내가 팀에 올린 사본이 원본(또는 원본의 지금 판)과 함께 나오면 내 것만 남긴다."""
     from .pipeline import current_of
     mine = {m["id"] for m in hits}
     def shadowed(m):
@@ -109,7 +105,128 @@ def recall(user, query, project_key=None, session_ext_id=None, limit=6, log=True
             return True
         head = current_of(m["origin_memo_id"]) if m.get("origin_state") == "changed" else None
         return bool(head and head["id"] in mine)
-    hits = [m for m in hits if not shadowed(m)][:limit]
+    return [m for m in hits if not shadowed(m)]
+
+
+PROMPT_MIN_CHARS = 6
+# 질문의 내용어를 뽑을 때 떼는 조사·어미와, 어느 질문에나 나와 관련도를 말해 주지 않는 말.
+_SUFFIXES = sorted("에서는 에서 으로는 으로 에게 에는 이랑 하려고 하려면 하는데 해서 해줘 해야 했지 했어 됐어 돼요 돼 되나 될까 인데 이야 이지 은 는 이 가 을 를 에 의 도 로 와 과 랑 만 좀 지".split(), key=len, reverse=True)
+_STOP = set("""어디 언제 얼마 무엇 뭐야 뭐지 어떻게 왜 이거 그거 저거 여기 거기 이번 지금 다시 그냥 먼저 혹시 정도 하는 하는데 해줘 알려 알려줘 고쳐 바꿔 돌려 만들어 보여 정리 확인
+  추가 수정 작업 방법 문제 파일 함수 코드 테스트 이름 오타 변수 질문 답변 설명 내용 부분 관련 경우 가능 필요 사용
+  될까 할까 하자 할게 이어서 뭐였 잡았 했던 있어 없어 같아 싶어 거야 건가 맞아 the and for with this that what how why please fix run make add""".split())
+
+
+def prompt_terms(text):
+    """질문의 내용어. '스테이징에 배포하려고' → ['스테이징', '배포']. 영문·숫자 토큰은 그대로(소문자) 쓴다."""
+    out = []
+    for tok in re.findall(r"[A-Za-z0-9_.\-]+|[가-힣]+", text):
+        t = tok.lower().strip("._-")
+        if re.match(r"[가-힣]", t):
+            for suf in _SUFFIXES:
+                if t.endswith(suf) and len(t) - len(suf) >= 2:
+                    t = t[:-len(suf)]
+                    break
+            for suf in ("하려", "하는", "했던", "하던", "해", "하"):
+                if t.endswith(suf) and len(t) - len(suf) >= 2:
+                    t = t[:-len(suf)]
+                    break
+        if len(t) < 2 or t in _STOP or t in out:
+            continue
+        out.append(t)
+    return out[:12]
+
+
+def prompt_relevance(terms, m):
+    """(겹친 내용어 수, 관련도). 관련도 = 0.6 × 질문 내용어 가운데 메모에 있는 비율 + 0.4 × 검색 점수."""
+    body = (m["body"] + " " + (m.get("title") or "") + " " + (m.get("when_hint") or "")).lower()
+    hit = [t for t in terms if t in body]
+    cover = len(hit) / len(terms) if terms else 0.0
+    return len(hit), round(0.6 * cover + 0.4 * min(1.0, m["score"]), 4)
+PROMPT_MEMO_CHARS = 400
+
+
+def _prompt_tag(m):
+    if m["tier"] == "team":
+        note = {"changed": " · 원본이 바뀜", "deleted": " · 원본이 삭제됨"}.get(m.get("origin_state"), "")
+        tag = f"[팀 지식 · {m['author_name']}{note}]"
+    elif m["tier"] == "candidate":
+        tag = "[세션 자동 추출·미확인]"
+    else:
+        tag = "[내 메모]"
+    if m["kind"] == "procedure":
+        tag += " 절차" + (f" · 언제: {m['when_hint']}" if m.get("when_hint") else "")
+    return tag
+
+
+def prompt_context(user, prompt, project_key=None, session_ext_id=None, platform=None, log=True):
+    """질문 하나에 관련도가 충분히 높은 메모만 넣는다(#12). 넣을 것이 없으면 빈 문자열이다.
+
+    n-gram 임베딩은 의미 검색이 아니라서, 점수만 보면 엉뚱한 메모가 질문마다 끼어든다. 그래서 질문의 단어가
+    메모에 실제로 있어야(키워드 일치) 하고 점수도 기준 이상이어야 한다. 넣지 않는 것이 잘못 넣는 것보다 낫다."""
+    t0 = time.time()
+    pol = db.policy("prompt_recall")
+    out = {"text": "", "memo_ids": [], "tokens": 0, "items": [], "enabled": bool(pol.get("enabled")) and not user.get("prompt_recall_off")}
+    q = re.sub(r"<private>[\s\S]*?</private>", " ", prompt or "", flags=re.I).strip()
+    if not out["enabled"] or len(q) < PROMPT_MIN_CHARS or q.startswith("/"):
+        return out
+    q = q[:2000]
+    uid = user["id"]
+    seen = set()
+    if session_ext_id:
+        seen = {r["memo_id"] for r in db.q("SELECT DISTINCT memo_id FROM memo_uses WHERE user_id=? AND session_ext_id=? AND kind IN ('inject','prompt')",
+                                           uid, session_ext_id)}
+    max_n, budget = int(pol.get("max_memos") or 0), int(pol.get("token_budget") or 0)
+    terms = prompt_terms(q)
+    if not terms:
+        return out
+    hits = search(access.space_ids(uid), q, project_key, limit=24, kinds=("knowledge", "procedure"), exclude_ids=tuple(seen), min_score=0.0)
+    # 키워드 일치: 질문의 내용어가 메모에 둘 이상 있어야 한다. 내용어가 하나뿐인 질문은 그 말이 영문 식별자(4자 이상)일 때만.
+    # 점수: 그 위에 관련도(내용어 비율 + 검색 점수)가 min_score 이상이어야 한다.
+    need = 2 if len(terms) > 1 else (1 if re.match(r"[a-z0-9_.\-]{4,}$", terms[0]) else 99)
+    ranked = []
+    for m in drop_shadowed(hits):
+        n_hit, rel = prompt_relevance(terms, m)
+        if n_hit >= need and rel >= float(pol.get("min_score") or 0):
+            m["relevance"] = rel
+            ranked.append(m)
+    hits = sorted(ranked, key=lambda m: -m["relevance"])
+    head = "# Conntext: 이 질문과 관련 있어 보이는 메모\n"
+    foot = "\n관련 없으면 무시한다. 답에 쓴 메모는 `mark_used`로 알린다. [세션 자동 추출·미확인] 메모를 근거로 쓸 때는 미확인임을 밝힌다.\n"
+    used = est_tokens(head) + est_tokens(foot)
+    blocks = []
+    for m in hits:
+        if len(blocks) >= max_n:
+            break
+        body = m["body"].strip()
+        body = body[:PROMPT_MEMO_CHARS] + ("…" if len(body) > PROMPT_MEMO_CHARS else "")
+        block = f"{_prompt_tag(m)} m:{m['id']}\n{body}"
+        c = est_tokens(block) + 2
+        if budget and used + c > budget:
+            continue
+        blocks.append(block)
+        used += c
+        out["memo_ids"].append(m["id"])
+        out["items"].append({"memo_id": m["id"], "tier": m["tier"], "kind": m["kind"], "relevance": m["relevance"], "text": body, "tokens": c})
+    if blocks:
+        out["text"] = head + "\n\n".join(blocks) + "\n" + foot
+        out["tokens"] = used
+    ms = (time.time() - t0) * 1000
+    if log:
+        now = db.now()
+        db.insert("prompt_injections", user_id=uid, platform=platform, session_ext_id=session_ext_id, project_key=project_key,
+                  memo_ids=out["memo_ids"], tokens=out["tokens"], ms=ms, created_at=now)
+        for mid in out["memo_ids"]:
+            db.insert("memo_uses", memo_id=mid, user_id=uid, kind="prompt", session_ext_id=session_ext_id, created_at=now)
+        db.metric("latency", "prompt", ms, user_id=uid)
+    out["ms"] = round(ms, 1)
+    return out
+
+
+def recall(user, query, project_key=None, session_ext_id=None, limit=6, log=True):
+    """log=False면 사용 기록(memo_uses)과 검색 지표를 남기지 않는다. 사람이 웹에서 타이핑하며 보는 검색용이다."""
+    t0 = time.time()
+    sids = access.space_ids(user["id"])
+    hits = drop_shadowed(search(sids, query, project_key, limit=limit + 4))[:limit]
     results = [_memo_view(m) for m in hits]
     topic_ids, topics = [], []
     for r in results:

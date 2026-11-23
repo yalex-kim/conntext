@@ -7,6 +7,9 @@
     "PreCompact": [
       { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/conntext.py\" hook pre-compact", "timeout": 10 } ] }
     ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/conntext.py\" hook prompt", "timeout": 5 } ] }
+    ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/conntext.py\" hook turn", "timeout": 5 } ] }
     ],

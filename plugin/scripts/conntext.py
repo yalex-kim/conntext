@@ -9,6 +9,7 @@
   conntext.py mcp                             stdio MCP 프록시 (서버 /mcp로 중계)
   conntext.py upload <marker.json>            세션 대화록 업로드 (훅이 백그라운드로 실행)
   conntext.py hook turn                       응답 한 번이 끝날 때(Stop). N턴마다 체크포인트를 올린다
+  conntext.py hook prompt                     질문을 보낼 때(UserPromptSubmit). 관련 메모가 있으면 맥락에 넣는다
   conntext.py upload <marker.json> --checkpoint [--reason R]
                                               비최종 업로드(맥락 압축 직전, 대화 중 체크포인트)
   conntext.py upload <marker.json> --after N [--pid P]
@@ -28,7 +29,8 @@ PRIVATE = re.compile(r"<private>[\s\S]*?</private>", re.I)
 MAX_TRANSCRIPT_BYTES = 3 * 1024 * 1024
 STALE_SECONDS = 6 * 3600
 POLL_SECONDS = float(os.environ.get("CONNTEXT_POLL_SECONDS") or 2)
-RETRY_SECONDS = (10, 30)          # 지연 업로드가 실패했을 때 다시 시도하는 간격
+RETRY_SECONDS = (10, 30)
+PROMPT_TIMEOUT = float(os.environ.get("CONNTEXT_PROMPT_TIMEOUT") or 2.5)   # 질문마다 관련 메모를 기다리는 최대 시간          # 지연 업로드가 실패했을 때 다시 시도하는 간격
 
 
 def log(msg):
@@ -173,6 +175,21 @@ def hook_upload(inp, final):
     d["reason"] = inp.get("reason") or inp.get("trigger") or ""
     m.write_text(json.dumps(d))
     spawn_upload(m, final)
+
+
+def hook_prompt(inp, event_name="UserPromptSubmit"):
+    """질문마다 관련 메모(#12). 서버가 관련도가 충분한 메모만 돌려주고, 없으면 아무것도 넣지 않는다.
+    질문을 늦추지 않도록 짧게 기다리고, 실패하면 조용히 넘어간다. 질문 원문은 서버에 저장되지 않는다."""
+    prompt = PRIVATE.sub(" ", inp.get("prompt") or "").strip()
+    if len(prompt) < 6 or prompt.startswith("/"):
+        return
+    cwd = inp.get("cwd") or os.getcwd()
+    paused = PAUSED.exists()
+    res = request("/api/hooks/prompt", {"platform": platform_name(), "session_id": "" if paused else (inp.get("session_id") or ""),
+                                        "project": project_of(cwd), "prompt": prompt[:4000]}, timeout=PROMPT_TIMEOUT)
+    ctx = (res or {}).get("context") or ""
+    if ctx:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event_name, "additionalContext": ctx}}, ensure_ascii=False))
 
 
 def checkpoint_every():
@@ -389,6 +406,8 @@ def cmd_hook(event):
             hook_upload(inp, False)
         elif event == "turn":
             hook_turn(inp)
+        elif event == "prompt":
+            hook_prompt(inp)
     except Exception as e:
         log(f"hook {event}: {type(e).__name__}: {e}")
         try:

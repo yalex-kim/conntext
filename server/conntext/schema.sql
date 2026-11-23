@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users(
   id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',            -- user | operator | auditor
   capture_paused INTEGER NOT NULL DEFAULT 0, llm_budget_tokens INTEGER,
+  prompt_recall_off INTEGER NOT NULL DEFAULT 0,  -- 질문마다 관련 메모 넣기를 이 사용자가 껐는지(#12)
   created_at INTEGER NOT NULL, deactivated_at INTEGER);
 CREATE TABLE IF NOT EXISTS spaces(
   id INTEGER PRIMARY KEY, kind TEXT NOT NULL,   -- personal | team
@@ -63,6 +64,10 @@ CREATE TABLE IF NOT EXISTS injections(
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, platform TEXT, session_ext_id TEXT, project_key TEXT,
   memo_ids TEXT NOT NULL DEFAULT '[]', topic_ids TEXT NOT NULL DEFAULT '[]',
   tokens INTEGER NOT NULL DEFAULT 0, ms REAL NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+-- 질문마다 넣은 관련 메모(#12). 넣은 것이 없어도 한 줄을 남겨 호출 대비 주입 비율을 본다.
+CREATE TABLE IF NOT EXISTS prompt_injections(
+  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, platform TEXT, session_ext_id TEXT, project_key TEXT,
+  memo_ids TEXT NOT NULL DEFAULT '[]', tokens INTEGER NOT NULL DEFAULT 0, ms REAL NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS memo_uses(
   id INTEGER PRIMARY KEY, memo_id INTEGER NOT NULL, user_id INTEGER NOT NULL, kind TEXT NOT NULL, -- inject | recall | used
   session_ext_id TEXT, created_at INTEGER NOT NULL);
